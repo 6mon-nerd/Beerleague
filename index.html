@@ -6,7 +6,11 @@
     <title>Beerleague</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#FFBF00">
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
     <style>
         :root { --dark-bg: #121212; --surface: #1E1E1E; --amber: #FFBF00; --text-light: #F5F5F5; --miss-red: #CF6679; --hit-green: #4CAF50;}
         body { background-color: var(--dark-bg); color: var(--text-light); font-family: sans-serif; margin: 0; padding: 20px; text-align: center; padding-bottom: 80px; overflow-x: hidden; transition: background-color 0.2s; }
@@ -35,9 +39,14 @@
         .anim-hit { animation: flashGreen 0.3s ease-out; }
         .anim-miss { animation: shakeRed 0.3s ease-out; }
         .badges { font-size: 14px; margin-top: 5px; color: #ffeb3b; }
+        
+        /* Petit indicateur de connexion */
+        #cloud-status { position: fixed; top: 10px; right: 10px; font-size: 12px; color: var(--hit-green); }
     </style>
 </head>
 <body>
+
+    <div id="cloud-status">☁️ Connecté</div>
 
     <div id="dashboard" class="screen active-screen">
         <h1>🍺 BEERLEAGUE</h1>
@@ -47,7 +56,7 @@
             <button class="btn-secondary" onclick="showScreen('manage-referees')">Gérer Arbitres</button>
         </div>
         <h2>Classement Ligue</h2>
-        <div id="leaderboard-list"></div>
+        <div id="leaderboard-list">Chargement des données Cloud...</div>
     </div>
 
     <div id="player-profile" class="screen">
@@ -62,7 +71,7 @@
             <div class="list-card" style="border-top: 1px solid gray; margin-top:10px;">Pire Ennemi 💀: <strong id="stat-nemesis"></strong></div>
             <div class="list-card">Souffre-Douleur 🧸: <strong id="stat-victim"></strong></div>
         </div>
-        <button class="btn-secondary" onclick="showScreen('dashboard')">Retour au Classement</button>
+        <button class="btn-secondary" onclick="showScreen('dashboard')">Retour</button>
     </div>
 
     <div id="referee-profile" class="screen">
@@ -93,15 +102,9 @@
 
     <div id="setup-match" class="screen">
         <h2>Configuration du Match</h2>
-        <div class="setup-section">
-            <h3 style="color: white;">1. Équipe A</h3><div id="setup-team-a"></div>
-        </div>
-        <div class="setup-section">
-            <h3 style="color: white;">2. Équipe B</h3><div id="setup-team-b"></div>
-        </div>
-        <div class="setup-section">
-            <h3 style="color: white;">3. L'Arbitre</h3><select id="setup-referee"></select>
-        </div>
+        <div class="setup-section"><h3 style="color: white;">1. Équipe A</h3><div id="setup-team-a"></div></div>
+        <div class="setup-section"><h3 style="color: white;">2. Équipe B</h3><div id="setup-team-b"></div></div>
+        <div class="setup-section"><h3 style="color: white;">3. L'Arbitre</h3><select id="setup-referee"></select></div>
         <button onclick="startMatch()">LANCER LE MATCH</button>
         <button class="btn-secondary" onclick="showScreen('dashboard')">Annuler</button>
     </div>
@@ -132,17 +135,44 @@
     </div>
 
     <script>
-        // --- BASE DE DONNÉES SÉCURISÉE ---
-        let players = [], referees = [], matchHistoryDB = [];
-        try {
-            players = JSON.parse(localStorage.getItem('bl_players')) || [];
-            referees = JSON.parse(localStorage.getItem('bl_referees')) || [];
-            matchHistoryDB = JSON.parse(localStorage.getItem('bl_history')) || [];
-        } catch(e) { players = []; referees = []; matchHistoryDB = []; }
+        // --- 1. INITIALISATION FIREBASE CLOUD ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBGiJ98hEeOpfg64Vn6Dq2_HlMuP44O9zs",
+            authDomain: "beerleague-3f172.firebaseapp.com",
+            projectId: "beerleague-3f172",
+            storageBucket: "beerleague-3f172.firebasestorage.app",
+            messagingSenderId: "413951414088",
+            appId: "1:413951414088:web:8c3811f8196d4123c2ad7d",
+            measurementId: "G-H81RBZM3Y4"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
 
+        // --- 2. VARIABLES GLOBALES ---
+        let players = [], referees = [], matchHistoryDB = [];
         let teamA = [], teamB = [], currentRefId = "", currentTeam = 'A', indexA = 0, indexB = 0;
         let shotHistoryStack = []; 
 
+        // --- 3. SYNCHRONISATION EN TEMPS RÉEL (MAGIE DU CLOUD) ---
+        db.collection("players").onSnapshot((snapshot) => {
+            players = [];
+            snapshot.forEach((doc) => players.push(doc.data()));
+            if(document.getElementById('dashboard').classList.contains('active-screen')) renderDashboard();
+            if(document.getElementById('manage-players').classList.contains('active-screen')) renderPlayersManager();
+        });
+
+        db.collection("referees").onSnapshot((snapshot) => {
+            referees = [];
+            snapshot.forEach((doc) => referees.push(doc.data()));
+            if(document.getElementById('manage-referees').classList.contains('active-screen')) renderRefereesManager();
+        });
+
+        db.collection("history").onSnapshot((snapshot) => {
+            matchHistoryDB = [];
+            snapshot.forEach((doc) => matchHistoryDB.push(doc.data()));
+        });
+
+        // --- NAVIGATION ---
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
             document.getElementById(screenId).classList.add('active-screen');
@@ -155,12 +185,14 @@
         function renderDashboard() {
             const listDiv = document.getElementById('leaderboard-list');
             listDiv.innerHTML = '';
+            if(players.length === 0) { listDiv.innerHTML = "<p style='color:gray'>Aucun joueur. Allez en ajouter !</p>"; return; }
+
             [...players].sort((a, b) => b.elo - a.elo).forEach((p, index) => {
                 let acc = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0;
                 listDiv.innerHTML += `
-                    <div class="list-card clickable-card" onclick="viewProfile(${p.id})">
+                    <div class="list-card clickable-card" onclick="viewProfile('${p.id}')">
                         <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${acc}% Préc. | ${p.matchesPlayed || 0} Matchs</small></div>
-                        <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${p.elo}</div>
+                        <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${Math.round(p.elo)}</div>
                     </div>`;
             });
         }
@@ -183,9 +215,10 @@
         }
 
         function viewProfile(id) {
-            let p = players.find(x => x.id === id); let advStats = calculateNemesis(id);
+            let p = players.find(x => x.id == id); if(!p) return;
+            let advStats = calculateNemesis(id);
             document.getElementById('stat-name').innerText = p.name;
-            document.getElementById('stat-elo').innerText = p.elo;
+            document.getElementById('stat-elo').innerText = Math.round(p.elo);
             document.getElementById('stat-accuracy').innerText = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) + '%' : '0%';
             document.getElementById('stat-wins-matches').innerText = `${p.wins || 0} / ${p.matchesPlayed || 0}`;
             document.getElementById('stat-mvp').innerText = p.mvpCount || 0; document.getElementById('stat-lvp').innerText = p.lvpCount || 0;
@@ -194,11 +227,10 @@
         }
 
         function viewRefereeProfile(id) {
-            let r = referees.find(x => x.id === id);
+            let r = referees.find(x => x.id == id); if(!r) return;
             document.getElementById('ref-stat-name').innerText = r.name;
             document.getElementById('ref-stat-matches').innerText = r.matchesRefereed || 0;
             document.getElementById('ref-stat-errors').innerText = r.errorsCount || 0;
-            
             let favPlayer = "Personne";
             if(r.playersRefereed && Object.keys(r.playersRefereed).length > 0) {
                 let favId = Object.keys(r.playersRefereed).sort((a,b) => r.playersRefereed[b] - r.playersRefereed[a])[0];
@@ -208,16 +240,28 @@
             showScreen('referee-profile');
         }
 
-        // --- GESTION DES DONNÉES ---
-        function addPlayer() { let n = document.getElementById('new-player-name'); if(n.value.trim()){ players.push({ id: Date.now(), name: n.value.trim(), elo: 0, hits: 0, totalShots: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 }); n.value = ""; renderPlayersManager(); saveData(); } }
-        function deletePlayer(id) { if(confirm("Supprimer ?")){ players = players.filter(p => p.id !== id); renderPlayersManager(); saveData(); } }
-        function renderPlayersManager() { document.getElementById('players-list-ui').innerHTML = players.map(p => `<div class="list-card"><span>${p.name}</span><button class="btn-delete" onclick="deletePlayer(${p.id})">✖</button></div>`).join(''); }
+        // --- GESTION DES DONNÉES CLOUD ---
+        function addPlayer() { 
+            let n = document.getElementById('new-player-name'); 
+            if(n.value.trim()){ 
+                let newId = Date.now().toString();
+                db.collection("players").doc(newId).set({ id: newId, name: n.value.trim(), elo: 0, hits: 0, totalShots: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 }); 
+                n.value = ""; 
+            } 
+        }
+        function deletePlayer(id) { if(confirm("Supprimer ce joueur de la ligue ?")){ db.collection("players").doc(id.toString()).delete(); } }
+        function renderPlayersManager() { document.getElementById('players-list-ui').innerHTML = players.map(p => `<div class="list-card"><span>${p.name}</span><button class="btn-delete" onclick="deletePlayer('${p.id}')">✖</button></div>`).join(''); }
         
-        function addReferee() { let n = document.getElementById('new-referee-name'); if(n.value.trim()){ referees.push({ id: Date.now(), name: n.value.trim(), matchesRefereed: 0, errorsCount: 0, playersRefereed: {} }); n.value = ""; renderRefereesManager(); saveData(); } }
-        function deleteReferee(id) { if(confirm("Supprimer ?")){ referees = referees.filter(r => r.id !== id); renderRefereesManager(); saveData(); } }
-        function renderRefereesManager() { document.getElementById('referees-list-ui').innerHTML = referees.map(r => `<div class="list-card clickable-card" onclick="viewRefereeProfile(${r.id})"><span>${r.name} 🔍</span><button class="btn-delete" onclick="event.stopPropagation(); deleteReferee(${r.id})">✖</button></div>`).join(''); }
-        
-        function saveData() { localStorage.setItem('bl_players', JSON.stringify(players)); localStorage.setItem('bl_referees', JSON.stringify(referees)); localStorage.setItem('bl_history', JSON.stringify(matchHistoryDB)); }
+        function addReferee() { 
+            let n = document.getElementById('new-referee-name'); 
+            if(n.value.trim()){ 
+                let newId = Date.now().toString();
+                db.collection("referees").doc(newId).set({ id: newId, name: n.value.trim(), matchesRefereed: 0, errorsCount: 0, playersRefereed: {} }); 
+                n.value = ""; 
+            } 
+        }
+        function deleteReferee(id) { if(confirm("Supprimer cet arbitre ?")){ db.collection("referees").doc(id.toString()).delete(); } }
+        function renderRefereesManager() { document.getElementById('referees-list-ui').innerHTML = referees.map(r => `<div class="list-card clickable-card" onclick="viewRefereeProfile('${r.id}')"><span>${r.name} 🔍</span><button class="btn-delete" onclick="event.stopPropagation(); deleteReferee('${r.id}')">✖</button></div>`).join(''); }
 
         // --- MATCH & UNDO ---
         function goToSetup() {
@@ -234,8 +278,8 @@
             document.querySelectorAll('.check-team-b:checked').forEach(cb => teamB.push(players.find(p => p.id == cb.value)));
             if(teamA.length === 0 || teamB.length === 0) return alert("1 joueur minimum par équipe !");
             
-            currentRefId = parseInt(document.getElementById('setup-referee').value);
-            let refObj = referees.find(r => r.id === currentRefId);
+            currentRefId = document.getElementById('setup-referee').value;
+            let refObj = referees.find(r => r.id == currentRefId);
             currentTeam = 'A'; indexA = 0; indexB = 0;
             document.getElementById('live-referee').innerText = refObj ? refObj.name : "Arbitre";
             updateLiveUI(); showScreen('live-match');
@@ -247,27 +291,48 @@
         }
 
         function registerShot(isHit) {
+            // Sauvegarde locale pour l'undo
             shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, playersClone: JSON.parse(JSON.stringify(players)) });
+            
+            // Effet visuel
             document.body.classList.remove('anim-hit', 'anim-miss'); void document.body.offsetWidth; document.body.classList.add(isHit ? 'anim-hit' : 'anim-miss');
             
+            // Mise à jour de la base de données
             let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
-            let playerInDb = players.find(p => p.id === activePlayer.id);
-            if(playerInDb) { playerInDb.totalShots += 1; if (isHit) playerInDb.hits += 1; }
+            let playerInDb = players.find(p => p.id == activePlayer.id);
+            if(playerInDb) { 
+                playerInDb.totalShots += 1; 
+                if (isHit) playerInDb.hits += 1; 
+                db.collection("players").doc(playerInDb.id).set(playerInDb); // Envoi au Cloud
+            }
 
             if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
-            updateLiveUI(); saveData();
+            updateLiveUI();
         }
 
         function undoShot() {
             if(shotHistoryStack.length === 0) return alert("Rien à annuler !");
             
-            // On compte l'erreur pour l'arbitre
-            let refObj = referees.find(r => r.id === currentRefId);
-            if(refObj) { refObj.errorsCount = (refObj.errorsCount || 0) + 1; }
+            // L'arbitre gagne un point d'erreur (Oups)
+            let refObj = referees.find(r => r.id == currentRefId);
+            if(refObj) { 
+                refObj.errorsCount = (refObj.errorsCount || 0) + 1; 
+                db.collection("referees").doc(refObj.id).set(refObj); 
+            }
 
+            // On restaure l'état précédent
             let lastState = shotHistoryStack.pop();
-            teamA = lastState.teamA; teamB = lastState.teamB; indexA = lastState.indexA; indexB = lastState.indexB; currentTeam = lastState.currentTeam; players = lastState.playersClone;
-            updateLiveUI(); saveData();
+            teamA = lastState.teamA; teamB = lastState.teamB; indexA = lastState.indexA; indexB = lastState.indexB; currentTeam = lastState.currentTeam; 
+            
+            // On remet les stats du joueur qui a tiré comme elles étaient
+            lastState.playersClone.forEach(oldP => {
+                let currentP = players.find(p => p.id == oldP.id);
+                if(JSON.stringify(oldP) !== JSON.stringify(currentP)) {
+                    db.collection("players").doc(oldP.id).set(oldP); // Rétablit dans le Cloud
+                }
+            });
+
+            updateLiveUI();
         }
 
         // --- FIN DE MATCH ---
@@ -287,35 +352,51 @@
 
         function submitMatchResults() {
             let winner = document.getElementById('winner-select').value;
-            let mvpId = parseInt(document.getElementById('mvp-select').value); let lvpId = parseInt(document.getElementById('lvp-select').value);
+            let mvpId = document.getElementById('mvp-select').value; 
+            let lvpId = document.getElementById('lvp-select').value;
 
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-            matchHistoryDB.push({ id: Date.now(), winner: winner, teamAIds: teamA.map(p=>p.id), teamBIds: teamB.map(p=>p.id) });
+            
+            // Enregistrement de l'historique du match dans le Cloud
+            let matchId = Date.now().toString();
+            db.collection("history").doc(matchId).set({ id: matchId, winner: winner, teamAIds: teamA.map(p=>p.id), teamBIds: teamB.map(p=>p.id) });
 
-            // Mise à jour des stats de l'arbitre
-            let refObj = referees.find(r => r.id === currentRefId);
+            // Stats Arbitre
+            let refObj = referees.find(r => r.id == currentRefId);
             if(refObj) {
                 refObj.matchesRefereed = (refObj.matchesRefereed || 0) + 1;
                 refObj.playersRefereed = refObj.playersRefereed || {};
                 [...teamA, ...teamB].forEach(p => { refObj.playersRefereed[p.id] = (refObj.playersRefereed[p.id] || 0) + 1; });
+                db.collection("referees").doc(refObj.id).set(refObj);
             }
 
+            // Calcul ELO
             let avgEloA = teamA.reduce((s, p) => s + p.elo, 0) / teamA.length; let avgEloB = teamB.reduce((s, p) => s + p.elo, 0) / teamB.length;
             let expA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400)); let expB = 1 - expA;
             let deltaA = Math.round(32 * ((winner === 'A' ? 1 : 0) - expA)); let deltaB = Math.round(32 * ((winner === 'B' ? 1 : 0) - expB));
 
-            teamA.forEach(p => { let db = players.find(x => x.id === p.id); if(db) { db.elo += deltaA; db.matchesPlayed = (db.matchesPlayed || 0) + 1; if(winner === 'A') db.wins = (db.wins || 0) + 1; }});
-            teamB.forEach(p => { let db = players.find(x => x.id === p.id); if(db) { db.elo += deltaB; db.matchesPlayed = (db.matchesPlayed || 0) + 1; if(winner === 'B') db.wins = (db.wins || 0) + 1; }});
-            
-            let mvp = players.find(p => p.id === mvpId); if(mvp){ mvp.elo += 10; mvp.mvpCount = (mvp.mvpCount || 0) + 1; }
-            let lvp = players.find(p => p.id === lvpId); if(lvp){ lvp.elo -= 5; lvp.lvpCount = (lvp.lvpCount || 0) + 1; }
-            players.forEach(p => { if(p.elo < 0) p.elo = 0; });
-            
-            saveData();
+            // Mise à jour finale des joueurs
+            [...teamA, ...teamB].forEach(p => { 
+                let dbP = players.find(x => x.id == p.id); 
+                if(dbP) { 
+                    dbP.matchesPlayed = (dbP.matchesPlayed || 0) + 1; 
+                    
+                    if(teamA.find(a => a.id == p.id)) {
+                        dbP.elo += deltaA; if(winner === 'A') dbP.wins = (dbP.wins || 0) + 1;
+                    } else {
+                        dbP.elo += deltaB; if(winner === 'B') dbP.wins = (dbP.wins || 0) + 1;
+                    }
+
+                    if(p.id == mvpId) { dbP.elo += 10; dbP.mvpCount = (dbP.mvpCount || 0) + 1; }
+                    if(p.id == lvpId) { dbP.elo -= 5; dbP.lvpCount = (dbP.lvpCount || 0) + 1; }
+                    if(dbP.elo < 0) dbP.elo = 0;
+
+                    db.collection("players").doc(dbP.id).set(dbP); // Sauvegarde dans le cloud
+                }
+            });
+
             setTimeout(() => { showScreen('dashboard'); }, 2000);
         }
-
-        renderDashboard();
     </script>
 </body>
 </html>
