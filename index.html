@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Beerleague</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFBF00">
+    <style>
+        :root { --dark-bg: #121212; --surface: #1E1E1E; --amber: #FFBF00; --text-light: #F5F5F5; --miss-red: #CF6679; }
+        body { background-color: var(--dark-bg); color: var(--text-light); font-family: sans-serif; margin: 0; padding: 20px; text-align: center; }
+        h1, h2, h3 { color: var(--amber); }
+        button { background-color: var(--amber); color: var(--dark-bg); border: none; border-radius: 12px; padding: 15px 20px; font-size: 18px; font-weight: bold; cursor: pointer; margin: 10px; width: 90%; max-width: 400px; }
+        button.btn-miss { background-color: var(--surface); color: var(--miss-red); }
+        .giant-btn { height: 150px; font-size: 32px; width: 45%; margin: 5px; }
+        .player-card { background-color: var(--surface); padding: 15px; margin: 10px auto; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; max-width: 400px; }
+        .screen { display: none; }
+        .active-screen { display: block; }
+        .flex-row { display: flex; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <div id="dashboard" class="screen active-screen">
+        <h1>🍺 BEERLEAGUE</h1>
+        <h2>Classement Ligue</h2>
+        <div id="player-list"></div>
+        <button onclick="startMatch()">Lancer un Match</button>
+    </div>
+
+    <div id="live-match" class="screen">
+        <h3 style="color: white;">AU TOUR DE L'ÉQUIPE</h3>
+        <h1 id="active-team-name" style="font-size: 40px; margin: 0;">A</h1>
+        <p style="font-size: 24px; margin-top: 30px;">Tireur : <strong id="active-player-name">...</strong></p>
+        
+        <div style="margin-top: 50px;" class="flex-row">
+            <button class="btn-miss giant-btn" onclick="registerShot(false)">RATÉ</button>
+            <button class="giant-btn" onclick="registerShot(true)">TOUCHÉ</button>
+        </div>
+        <button style="margin-top: 50px; background-color: var(--surface); color: white;" onclick="goToEndScreen()">Fin du Match</button>
+    </div>
+
+    <div id="end-match" class="screen">
+        <h1>FIN DU MATCH</h1>
+        <h3>Qui a gagné ?</h3>
+        <button onclick="finishAndCalculateElo('A')">Victoire Équipe A</button>
+        <button onclick="finishAndCalculateElo('B')">Victoire Équipe B</button>
+    </div>
+
+    <script>
+        // Enregistrement du Service Worker (Pour le mode Hors-Ligne)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+
+        let players = JSON.parse(localStorage.getItem('beerleague_players')) || [
+            { id: 1, name: "Alex", elo: 1050, hits: 10, totalShots: 20 },
+            { id: 2, name: "Sam", elo: 980, hits: 5, totalShots: 15 },
+            { id: 3, name: "Jo", elo: 1020, hits: 8, totalShots: 18 }
+        ];
+
+        let currentTeam = 'A';
+        let teamA = [players[0]]; // Équipe de 1
+        let teamB = [players[1], players[2]]; // Équipe de 2
+        let indexA = 0; let indexB = 0;
+
+        function renderDashboard() {
+            const listDiv = document.getElementById('player-list');
+            listDiv.innerHTML = '';
+            players.sort((a, b) => b.elo - a.elo).forEach((p, index) => {
+                let accuracy = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0;
+                listDiv.innerHTML += `
+                    <div class="player-card">
+                        <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${accuracy}% Précision</small></div>
+                        <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${p.elo}</div>
+                    </div>`;
+            });
+            localStorage.setItem('beerleague_players', JSON.stringify(players));
+        }
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
+            document.getElementById(screenId).classList.add('active-screen');
+        }
+
+        function startMatch() { currentTeam = 'A'; indexA = 0; indexB = 0; updateLiveUI(); showScreen('live-match'); }
+
+        function updateLiveUI() {
+            document.getElementById('active-team-name').innerText = currentTeam;
+            document.getElementById('active-player-name').innerText = currentTeam === 'A' ? teamA[indexA].name : teamB[indexB].name;
+        }
+
+        function registerShot(isHit) {
+            let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
+            activePlayer.totalShots += 1;
+            if (isHit) activePlayer.hits += 1;
+
+            if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } 
+            else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
+            updateLiveUI();
+        }
+
+        function goToEndScreen() { showScreen('end-match'); }
+
+        // MOTEUR ELO
+        function finishAndCalculateElo(winner) {
+            let kFactor = 32;
+            let avgEloA = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
+            let avgEloB = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
+
+            let expectedA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400));
+            let expectedB = 1 - expectedA;
+
+            let actualA = winner === 'A' ? 1 : 0;
+            let actualB = winner === 'B' ? 1 : 0;
+
+            let deltaA = Math.round(kFactor * (actualA - expectedA));
+            let deltaB = Math.round(kFactor * (actualB - expectedB));
+
+            teamA.forEach(p => p.elo += deltaA);
+            teamB.forEach(p => p.elo += deltaB);
+
+            renderDashboard();
+            showScreen('dashboard');
+        }
+
+        renderDashboard();
+    </script>
+</body>
+</html>
