@@ -13,15 +13,17 @@
         button { background-color: var(--amber); color: var(--dark-bg); border: none; border-radius: 12px; padding: 15px 20px; font-size: 16px; font-weight: bold; cursor: pointer; margin: 10px 5px; width: 90%; max-width: 400px; }
         button.btn-secondary { background-color: var(--surface); color: var(--amber); border: 2px solid var(--amber); }
         button.btn-miss { background-color: var(--surface); color: var(--miss-red); border: none;}
-        input[type="text"] { background-color: var(--surface); color: white; border: 1px solid gray; padding: 15px; border-radius: 8px; font-size: 16px; width: 80%; max-width: 350px; margin-bottom: 10px; }
+        button.btn-delete { background-color: var(--miss-red); color: white; padding: 10px; width: auto; font-size: 14px; margin: 0; border-radius: 6px; }
+        input[type="text"], select { background-color: var(--surface); color: white; border: 1px solid gray; padding: 15px; border-radius: 8px; font-size: 16px; width: 80%; max-width: 350px; margin-bottom: 10px; }
         
         .giant-btn { height: 150px; font-size: 32px; width: 45%; margin: 5px; }
         .list-card { background-color: var(--surface); padding: 15px; margin: 10px auto; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; max-width: 400px; text-align: left; }
+        .clickable-card { cursor: pointer; border: 1px solid transparent; }
+        .clickable-card:hover { border: 1px solid var(--amber); }
         .screen { display: none; }
         .active-screen { display: block; }
         .flex-row { display: flex; justify-content: center; flex-wrap: wrap; }
         
-        /* Checkboxes pour la sélection */
         .checkbox-container { display: flex; align-items: center; justify-content: flex-start; margin-bottom: 10px; }
         .checkbox-container input { width: 25px; height: 25px; margin-right: 15px; accent-color: var(--amber); }
         .setup-section { background-color: #1a1a1a; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;}
@@ -39,7 +41,22 @@
         </div>
 
         <h2>Classement Ligue</h2>
+        <p style="color:gray; font-size: 12px;">Cliquez sur un joueur pour voir ses stats</p>
         <div id="leaderboard-list"></div>
+    </div>
+
+    <div id="player-profile" class="screen">
+        <h1 id="stat-name">Nom</h1>
+        <div class="setup-section">
+            <div class="list-card">ELO: <strong id="stat-elo" style="color:var(--amber); font-size:20px;"></strong></div>
+            <div class="list-card">Précision: <strong id="stat-accuracy"></strong></div>
+            <div class="list-card">Matchs Joués: <strong id="stat-matches"></strong></div>
+            <div class="list-card">Victoires: <strong id="stat-wins"></strong></div>
+            <div class="list-card">Tirs Touchés / Tentés: <strong id="stat-shots"></strong></div>
+            <div class="list-card">Titres MVP ⭐: <strong id="stat-mvp"></strong></div>
+            <div class="list-card">Titres LVP 💩: <strong id="stat-lvp"></strong></div>
+        </div>
+        <button class="btn-secondary" onclick="showScreen('dashboard')">Retour au Classement</button>
     </div>
 
     <div id="manage-players" class="screen">
@@ -60,23 +77,18 @@
 
     <div id="setup-match" class="screen">
         <h2>Configuration du Match</h2>
-        
         <div class="setup-section">
             <h3 style="color: white;">1. Équipe A</h3>
             <div id="setup-team-a"></div>
         </div>
-
         <div class="setup-section">
             <h3 style="color: white;">2. Équipe B</h3>
             <div id="setup-team-b"></div>
         </div>
-
         <div class="setup-section">
             <h3 style="color: white;">3. L'Arbitre</h3>
-            <select id="setup-referee" style="width: 100%; padding: 10px; background: var(--surface); color: white; font-size: 16px;">
-                </select>
+            <select id="setup-referee"></select>
         </div>
-
         <button onclick="startMatch()">LANCER LE MATCH</button>
         <button class="btn-secondary" onclick="showScreen('dashboard')">Annuler</button>
     </div>
@@ -95,10 +107,23 @@
     </div>
 
     <div id="end-match" class="screen">
-        <h1>FIN DU MATCH</h1>
-        <h3>Qui a gagné ?</h3>
-        <button onclick="finishAndCalculateElo('A')">Victoire Équipe A</button>
-        <button onclick="finishAndCalculateElo('B')">Victoire Équipe B</button>
+        <h1>BILAN DU MATCH</h1>
+        
+        <div class="setup-section">
+            <h3>Équipe Gagnante 🏆</h3>
+            <select id="winner-select">
+                <option value="A">Équipe A</option>
+                <option value="B">Équipe B</option>
+            </select>
+
+            <h3>MVP (+10 Elo) ⭐</h3>
+            <select id="mvp-select"></select>
+
+            <h3>LVP (-5 Elo) 💩</h3>
+            <select id="lvp-select"></select>
+        </div>
+
+        <button onclick="submitMatchResults()">Valider et Calculer l'Elo</button>
     </div>
 
     <script>
@@ -119,7 +144,7 @@
             if(screenId === 'manage-referees') renderRefereesManager();
         }
 
-        // --- DASHBOARD ---
+        // --- DASHBOARD & PROFIL ---
         function renderDashboard() {
             const listDiv = document.getElementById('leaderboard-list');
             listDiv.innerHTML = '';
@@ -128,20 +153,42 @@
             [...players].sort((a, b) => b.elo - a.elo).forEach((p, index) => {
                 let accuracy = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0;
                 listDiv.innerHTML += `
-                    <div class="list-card">
-                        <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${accuracy}% Précision | ${p.matchesPlayed} Matchs</small></div>
+                    <div class="list-card clickable-card" onclick="viewProfile(${p.id})">
+                        <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${accuracy}% Précision | ${p.matchesPlayed || 0} Matchs</small></div>
                         <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${p.elo}</div>
                     </div>`;
             });
             saveData();
         }
 
+        function viewProfile(id) {
+            let p = players.find(x => x.id === id);
+            document.getElementById('stat-name').innerText = p.name;
+            document.getElementById('stat-elo').innerText = p.elo;
+            document.getElementById('stat-accuracy').innerText = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('stat-matches').innerText = p.matchesPlayed || 0;
+            document.getElementById('stat-wins').innerText = p.wins || 0;
+            document.getElementById('stat-shots').innerText = `${p.hits} / ${p.totalShots}`;
+            document.getElementById('stat-mvp').innerText = p.mvpCount || 0;
+            document.getElementById('stat-lvp').innerText = p.lvpCount || 0;
+            showScreen('player-profile');
+        }
+
         // --- GESTION JOUEURS & ARBITRES ---
         function addPlayer() {
             let nameInput = document.getElementById('new-player-name');
             if(nameInput.value.trim() !== "") {
-                players.push({ id: Date.now(), name: nameInput.value.trim(), elo: 1000, hits: 0, totalShots: 0, matchesPlayed: 0 });
+                // ELO INITIAL A 0 et nouveaux champs de stats
+                players.push({ id: Date.now(), name: nameInput.value.trim(), elo: 0, hits: 0, totalShots: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 });
                 nameInput.value = "";
+                renderPlayersManager();
+                saveData();
+            }
+        }
+
+        function deletePlayer(id) {
+            if(confirm("Voulez-vous vraiment supprimer ce joueur ?")) {
+                players = players.filter(p => p.id !== id);
                 renderPlayersManager();
                 saveData();
             }
@@ -149,7 +196,11 @@
 
         function renderPlayersManager() {
             const listDiv = document.getElementById('players-list-ui');
-            listDiv.innerHTML = players.map(p => `<div class="list-card">${p.name} <span>${p.elo} ELO</span></div>`).join('');
+            listDiv.innerHTML = players.map(p => `
+                <div class="list-card">
+                    <span>${p.name} (${p.elo} ELO)</span>
+                    <button class="btn-delete" onclick="deletePlayer(${p.id})">✖</button>
+                </div>`).join('');
         }
 
         function addReferee() {
@@ -162,9 +213,21 @@
             }
         }
 
+        function deleteReferee(id) {
+            if(confirm("Voulez-vous vraiment supprimer cet arbitre ?")) {
+                referees = referees.filter(r => r.id !== id);
+                renderRefereesManager();
+                saveData();
+            }
+        }
+
         function renderRefereesManager() {
             const listDiv = document.getElementById('referees-list-ui');
-            listDiv.innerHTML = referees.map(r => `<div class="list-card">${r.name}</div>`).join('');
+            listDiv.innerHTML = referees.map(r => `
+                <div class="list-card">
+                    <span>${r.name}</span>
+                    <button class="btn-delete" onclick="deleteReferee(${r.id})">✖</button>
+                </div>`).join('');
         }
 
         function saveData() {
@@ -194,16 +257,14 @@
         function startMatch() {
             teamA = []; teamB = [];
             
-            document.querySelectorAll('.check-team-a:checked').forEach(cb => {
-                teamA.push(players.find(p => p.id == cb.value));
-            });
-            document.querySelectorAll('.check-team-b:checked').forEach(cb => {
-                teamB.push(players.find(p => p.id == cb.value));
-            });
+            document.querySelectorAll('.check-team-a:checked').forEach(cb => { teamA.push(players.find(p => p.id == cb.value)); });
+            document.querySelectorAll('.check-team-b:checked').forEach(cb => { teamB.push(players.find(p => p.id == cb.value)); });
 
-            if(teamA.length === 0 || teamB.length === 0) {
-                alert("Chaque équipe doit avoir au moins 1 joueur !"); return;
-            }
+            if(teamA.length === 0 || teamB.length === 0) { alert("Chaque équipe doit avoir au moins 1 joueur !"); return; }
+
+            // Vérifier qu'un joueur n'est pas dans les deux équipes
+            let duplicate = teamA.find(pa => teamB.find(pb => pb.id === pa.id));
+            if(duplicate) { alert(`${duplicate.name} ne peut pas être dans les deux équipes !`); return; }
 
             currentRef = document.getElementById('setup-referee').value;
             currentTeam = 'A'; indexA = 0; indexB = 0;
@@ -222,10 +283,11 @@
         function registerShot(isHit) {
             let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
             
-            // On met à jour le joueur direct dans la base globale
             let playerInDb = players.find(p => p.id === activePlayer.id);
-            playerInDb.totalShots += 1;
-            if (isHit) playerInDb.hits += 1;
+            if(playerInDb) {
+                playerInDb.totalShots += 1;
+                if (isHit) playerInDb.hits += 1;
+            }
 
             if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } 
             else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
@@ -233,10 +295,25 @@
             saveData();
         }
 
-        function goToEndScreen() { showScreen('end-match'); }
+        // --- FIN DE MATCH ET ELO ---
+        function goToEndScreen() { 
+            let allMatchPlayers = [...teamA, ...teamB];
+            let mvpSelect = document.getElementById('mvp-select');
+            let lvpSelect = document.getElementById('lvp-select');
+            
+            // Remplir les listes MVP et LVP
+            let optionsHtml = allMatchPlayers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+            mvpSelect.innerHTML = optionsHtml;
+            lvpSelect.innerHTML = optionsHtml;
 
-        // --- ELO ---
-        function finishAndCalculateElo(winner) {
+            showScreen('end-match'); 
+        }
+
+        function submitMatchResults() {
+            let winner = document.getElementById('winner-select').value;
+            let mvpId = parseInt(document.getElementById('mvp-select').value);
+            let lvpId = parseInt(document.getElementById('lvp-select').value);
+
             let kFactor = 32;
             let avgEloA = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
             let avgEloB = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
@@ -250,16 +327,42 @@
             let deltaA = Math.round(kFactor * (actualA - expectedA));
             let deltaB = Math.round(kFactor * (actualB - expectedB));
 
-            // Application de l'Elo et incrément des matchs joués
+            // Mise à jour de l'équipe A
             teamA.forEach(p => {
                 let dbPlayer = players.find(player => player.id === p.id);
-                dbPlayer.elo += deltaA;
-                dbPlayer.matchesPlayed += 1;
+                if(dbPlayer) { 
+                    dbPlayer.elo += deltaA; 
+                    dbPlayer.matchesPlayed = (dbPlayer.matchesPlayed || 0) + 1;
+                    if(winner === 'A') dbPlayer.wins = (dbPlayer.wins || 0) + 1;
+                }
             });
+
+            // Mise à jour de l'équipe B
             teamB.forEach(p => {
                 let dbPlayer = players.find(player => player.id === p.id);
-                dbPlayer.elo += deltaB;
-                dbPlayer.matchesPlayed += 1;
+                if(dbPlayer) { 
+                    dbPlayer.elo += deltaB; 
+                    dbPlayer.matchesPlayed = (dbPlayer.matchesPlayed || 0) + 1;
+                    if(winner === 'B') dbPlayer.wins = (dbPlayer.wins || 0) + 1;
+                }
+            });
+
+            // Application MVP et LVP
+            let mvpPlayer = players.find(p => p.id === mvpId);
+            if(mvpPlayer) { 
+                mvpPlayer.elo += 10; 
+                mvpPlayer.mvpCount = (mvpPlayer.mvpCount || 0) + 1;
+            }
+
+            let lvpPlayer = players.find(p => p.id === lvpId);
+            if(lvpPlayer) { 
+                lvpPlayer.elo -= 5; 
+                lvpPlayer.lvpCount = (lvpPlayer.lvpCount || 0) + 1;
+            }
+
+            // BLOCAGE DE L'ELO À 0 MINIMUM
+            players.forEach(p => {
+                if(p.elo < 0) p.elo = 0;
             });
 
             saveData();
