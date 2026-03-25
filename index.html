@@ -227,4 +227,223 @@
             playerInDb.totalShots += 1;
             if (isHit) playerInDb.hits += 1;
 
-            if (currentTeam === 'A') { indexA =
+            if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } 
+            else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
+            updateLiveUI();
+            saveData();
+        }
+
+        function goToEndScreen() { showScreen('end-match'); }
+
+        // --- ELO ---
+        function finishAndCalculateElo(winner) {
+            let kFactor = 32;
+            let avgEloA = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
+            let avgEloB = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
+
+            let expectedA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400));
+            let expectedB = 1 - expectedA;
+
+            let actualA = winner === 'A' ? 1 : 0;
+            let actualB = winner === 'B' ? 1 : 0;
+
+            let deltaA = Math.round(kFactor * (actualA - expectedA));
+            let deltaB = Math.round(kFactor * (actualB - expectedB));
+
+            // Application de l'Elo et incrément des matchs joués
+            teamA.forEach(p => {
+                let dbPlayer = players.find(player => player.id === p.id);
+                dbPlayer.elo += deltaA;
+                dbPlayer.matchesPlayed += 1;
+            });
+            teamB.forEach(p => {
+                let dbPlayer = players.find(player => player.id === p.id);
+                dbPlayer.elo += deltaB;
+                dbPlayer.matchesPlayed += 1;
+            });
+
+            saveData();
+            showScreen('dashboard');
+        }
+
+        // Init
+        renderDashboard();
+    <script>
+        // --- BASE DE DONNÉES SÉCURISÉE ---
+        let players = [];
+        let referees = [];
+        try {
+            players = JSON.parse(localStorage.getItem('bl_players')) || [];
+            if (!Array.isArray(players)) players = []; // Sécurité anti-crash
+            referees = JSON.parse(localStorage.getItem('bl_referees')) || [];
+            if (!Array.isArray(referees)) referees = [];
+        } catch(e) {
+            players = []; referees = [];
+        }
+
+        // Variables de match
+        let teamA = []; let teamB = []; let currentRef = "";
+        let currentTeam = 'A'; let indexA = 0; let indexB = 0;
+
+        // --- NAVIGATION ---
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
+            document.getElementById(screenId).classList.add('active-screen');
+            if(screenId === 'dashboard') renderDashboard();
+            if(screenId === 'manage-players') renderPlayersManager();
+            if(screenId === 'manage-referees') renderRefereesManager();
+        }
+
+        // --- DASHBOARD ---
+        function renderDashboard() {
+            const listDiv = document.getElementById('leaderboard-list');
+            listDiv.innerHTML = '';
+            if (players.length === 0) {
+                listDiv.innerHTML = "<p style='color:gray'>Aucun joueur. Allez en ajouter !</p>";
+            } else {
+                // Tri sécurisé
+                let sortedPlayers = players.slice().sort((a, b) => b.elo - a.elo);
+                sortedPlayers.forEach((p, index) => {
+                    let accuracy = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0;
+                    listDiv.innerHTML += `
+                        <div class="list-card">
+                            <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${accuracy}% Précision | ${p.matchesPlayed || 0} Matchs</small></div>
+                            <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${p.elo}</div>
+                        </div>`;
+                });
+            }
+            saveData();
+        }
+
+        // --- GESTION JOUEURS & ARBITRES ---
+        function addPlayer() {
+            let nameInput = document.getElementById('new-player-name');
+            if(nameInput.value.trim() !== "") {
+                players.push({ id: Date.now(), name: nameInput.value.trim(), elo: 1000, hits: 0, totalShots: 0, matchesPlayed: 0 });
+                nameInput.value = "";
+                renderPlayersManager();
+                saveData();
+            }
+        }
+
+        function renderPlayersManager() {
+            const listDiv = document.getElementById('players-list-ui');
+            listDiv.innerHTML = players.map(p => `<div class="list-card">${p.name} <span>${p.elo} ELO</span></div>`).join('');
+        }
+
+        function addReferee() {
+            let nameInput = document.getElementById('new-referee-name');
+            if(nameInput.value.trim() !== "") {
+                referees.push({ id: Date.now(), name: nameInput.value.trim() });
+                nameInput.value = "";
+                renderRefereesManager();
+                saveData();
+            }
+        }
+
+        function renderRefereesManager() {
+            const listDiv = document.getElementById('referees-list-ui');
+            listDiv.innerHTML = referees.map(r => `<div class="list-card">${r.name}</div>`).join('');
+        }
+
+        function saveData() {
+            localStorage.setItem('bl_players', JSON.stringify(players));
+            localStorage.setItem('bl_referees', JSON.stringify(referees));
+        }
+
+        // --- SETUP MATCH ---
+        function goToSetup() {
+            if(players.length < 2) { alert("Il faut au moins 2 joueurs !"); return; }
+            if(referees.length < 1) { alert("Il faut au moins 1 arbitre !"); return; }
+            
+            let htmlA = ''; let htmlB = '';
+            players.forEach(p => {
+                htmlA += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-a"> ${p.name}</label>`;
+                htmlB += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-b"> ${p.name}</label>`;
+            });
+            document.getElementById('setup-team-a').innerHTML = htmlA;
+            document.getElementById('setup-team-b').innerHTML = htmlB;
+
+            let refSelect = document.getElementById('setup-referee');
+            refSelect.innerHTML = referees.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
+
+            showScreen('setup-match');
+        }
+
+        function startMatch() {
+            teamA = []; teamB = [];
+            
+            document.querySelectorAll('.check-team-a:checked').forEach(cb => {
+                teamA.push(players.find(p => p.id == cb.value));
+            });
+            document.querySelectorAll('.check-team-b:checked').forEach(cb => {
+                teamB.push(players.find(p => p.id == cb.value));
+            });
+
+            if(teamA.length === 0 || teamB.length === 0) {
+                alert("Chaque équipe doit avoir au moins 1 joueur !"); return;
+            }
+
+            currentRef = document.getElementById('setup-referee').value;
+            currentTeam = 'A'; indexA = 0; indexB = 0;
+            
+            document.getElementById('live-referee').innerText = currentRef;
+            updateLiveUI();
+            showScreen('live-match');
+        }
+
+        // --- LIVE MATCH ---
+        function updateLiveUI() {
+            document.getElementById('active-team-name').innerText = currentTeam;
+            document.getElementById('active-player-name').innerText = currentTeam === 'A' ? teamA[indexA].name : teamB[indexB].name;
+        }
+
+        function registerShot(isHit) {
+            let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
+            let playerInDb = players.find(p => p.id === activePlayer.id);
+            if(playerInDb) {
+                playerInDb.totalShots += 1;
+                if (isHit) playerInDb.hits += 1;
+            }
+
+            if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } 
+            else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
+            updateLiveUI();
+            saveData();
+        }
+
+        function goToEndScreen() { showScreen('end-match'); }
+
+        // --- ELO ---
+        function finishAndCalculateElo(winner) {
+            let kFactor = 32;
+            let avgEloA = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
+            let avgEloB = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
+
+            let expectedA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400));
+            let expectedB = 1 - expectedA;
+
+            let actualA = winner === 'A' ? 1 : 0;
+            let actualB = winner === 'B' ? 1 : 0;
+
+            let deltaA = Math.round(kFactor * (actualA - expectedA));
+            let deltaB = Math.round(kFactor * (actualB - expectedB));
+
+            teamA.forEach(p => {
+                let dbPlayer = players.find(player => player.id === p.id);
+                if(dbPlayer) { dbPlayer.elo += deltaA; dbPlayer.matchesPlayed = (dbPlayer.matchesPlayed || 0) + 1; }
+            });
+            teamB.forEach(p => {
+                let dbPlayer = players.find(player => player.id === p.id);
+                if(dbPlayer) { dbPlayer.elo += deltaB; dbPlayer.matchesPlayed = (dbPlayer.matchesPlayed || 0) + 1; }
+            });
+
+            saveData();
+            showScreen('dashboard');
+        }
+
+        // Init
+        renderDashboard();
+    </script>
+</body>
+</html>
