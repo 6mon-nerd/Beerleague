@@ -10,6 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <style>
         :root { --dark-bg: #121212; --surface: #1E1E1E; --amber: #FFBF00; --text-light: #F5F5F5; --miss-red: #CF6679; --hit-green: #4CAF50;}
@@ -23,7 +24,7 @@
         input[type="text"], select { background-color: var(--surface); color: white; border: 1px solid gray; padding: 15px; border-radius: 8px; font-size: 16px; width: 80%; max-width: 350px; margin-bottom: 10px; }
         
         .giant-btn { height: 150px; font-size: 32px; width: 45%; margin: 5px; }
-        .list-card { background-color: var(--surface); padding: 15px; margin: 10px auto; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; max-width: 400px; text-align: left; }
+        .list-card { background-color: var(--surface); padding: 15px; margin: 10px auto; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; max-width: 400px; text-align: left; position: relative;}
         .clickable-card { cursor: pointer; border: 1px solid transparent; }
         .clickable-card:hover { border: 1px solid var(--amber); }
         .screen { display: none; }
@@ -39,9 +40,10 @@
         .anim-hit { animation: flashGreen 0.3s ease-out; }
         .anim-miss { animation: shakeRed 0.3s ease-out; }
         .badges { font-size: 14px; margin-top: 5px; color: #ffeb3b; }
+        .streak { font-size: 18px; font-weight: bold; margin-left: 10px;}
         
-        /* Petit indicateur de connexion */
-        #cloud-status { position: fixed; top: 10px; right: 10px; font-size: 12px; color: var(--hit-green); }
+        #cloud-status { position: fixed; top: 10px; right: 10px; font-size: 12px; color: var(--hit-green); z-index: 100;}
+        canvas { background-color: var(--surface); border-radius: 10px; padding: 10px; margin-top: 15px; max-height: 250px; }
     </style>
 </head>
 <body>
@@ -52,6 +54,7 @@
         <h1>🍺 BEERLEAGUE</h1>
         <div class="flex-row">
             <button onclick="goToSetup()">Nouveau Match</button>
+            <button class="btn-secondary" onclick="showScreen('hall-of-fame')">🏆 Hall of Fame</button>
             <button class="btn-secondary" onclick="showScreen('manage-players')">Gérer Joueurs</button>
             <button class="btn-secondary" onclick="showScreen('manage-referees')">Gérer Arbitres</button>
         </div>
@@ -59,11 +62,22 @@
         <div id="leaderboard-list">Chargement des données Cloud...</div>
     </div>
 
+    <div id="hall-of-fame" class="screen">
+        <h1>🏆 HALL OF FAME</h1>
+        <div class="setup-section" id="hof-content">
+            </div>
+        <button class="btn-secondary" onclick="showScreen('dashboard')">Retour Menu</button>
+    </div>
+
     <div id="player-profile" class="screen">
         <h1 id="stat-name">Nom</h1>
         <div id="stat-badges" class="badges" style="margin-bottom: 20px; font-weight: bold;"></div>
-        <div class="setup-section">
-            <div class="list-card">ELO: <strong id="stat-elo" style="color:var(--amber); font-size:20px;"></strong></div>
+        
+        <canvas id="eloChart"></canvas>
+
+        <div class="setup-section" style="margin-top: 20px;">
+            <div class="list-card">ELO Actuel: <strong id="stat-elo" style="color:var(--amber); font-size:20px;"></strong></div>
+            <div class="list-card">Le Prime (Max): <strong id="stat-max-elo" style="color:var(--hit-green);"></strong></div>
             <div class="list-card">Précision: <strong id="stat-accuracy"></strong></div>
             <div class="list-card">Victoires / Matchs: <strong id="stat-wins-matches"></strong></div>
             <div class="list-card">Titres MVP ⭐: <strong id="stat-mvp"></strong></div>
@@ -135,7 +149,7 @@
     </div>
 
     <script>
-        // --- 1. INITIALISATION FIREBASE CLOUD ---
+        // --- 1. CONFIGURATION FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyBGiJ98hEeOpfg64Vn6Dq2_HlMuP44O9zs",
             authDomain: "beerleague-3f172.firebaseapp.com",
@@ -148,28 +162,26 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // --- 2. VARIABLES GLOBALES ---
+        // Variables Globales
         let players = [], referees = [], matchHistoryDB = [];
         let teamA = [], teamB = [], currentRefId = "", currentTeam = 'A', indexA = 0, indexB = 0;
         let shotHistoryStack = []; 
+        let eloChartInstance = null; // Pour le graphique
 
-        // --- 3. SYNCHRONISATION EN TEMPS RÉEL (MAGIE DU CLOUD) ---
+        // --- 2. SYNCHRONISATION CLOUD ---
         db.collection("players").onSnapshot((snapshot) => {
             players = [];
             snapshot.forEach((doc) => players.push(doc.data()));
             if(document.getElementById('dashboard').classList.contains('active-screen')) renderDashboard();
             if(document.getElementById('manage-players').classList.contains('active-screen')) renderPlayersManager();
+            if(document.getElementById('hall-of-fame').classList.contains('active-screen')) renderHallOfFame();
         });
-
         db.collection("referees").onSnapshot((snapshot) => {
-            referees = [];
-            snapshot.forEach((doc) => referees.push(doc.data()));
+            referees = []; snapshot.forEach((doc) => referees.push(doc.data()));
             if(document.getElementById('manage-referees').classList.contains('active-screen')) renderRefereesManager();
         });
-
         db.collection("history").onSnapshot((snapshot) => {
-            matchHistoryDB = [];
-            snapshot.forEach((doc) => matchHistoryDB.push(doc.data()));
+            matchHistoryDB = []; snapshot.forEach((doc) => matchHistoryDB.push(doc.data()));
         });
 
         // --- NAVIGATION ---
@@ -179,9 +191,10 @@
             if(screenId === 'dashboard') renderDashboard();
             if(screenId === 'manage-players') renderPlayersManager();
             if(screenId === 'manage-referees') renderRefereesManager();
+            if(screenId === 'hall-of-fame') renderHallOfFame();
         }
 
-        // --- DASHBOARD & PROFILS ---
+        // --- DASHBOARD (Avec les Séries 🔥/❄️) ---
         function renderDashboard() {
             const listDiv = document.getElementById('leaderboard-list');
             listDiv.innerHTML = '';
@@ -189,29 +202,53 @@
 
             [...players].sort((a, b) => b.elo - a.elo).forEach((p, index) => {
                 let acc = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0;
+                
+                // Système de Séries (Streaks)
+                let streakHtml = "";
+                let streak = p.currentStreak || 0;
+                if(streak >= 3) streakHtml = `<span class="streak" style="color:#FF5722;">🔥x${streak}</span>`;
+                else if(streak <= -3) streakHtml = `<span class="streak" style="color:#03A9F4;">❄️x${Math.abs(streak)}</span>`;
+
                 listDiv.innerHTML += `
                     <div class="list-card clickable-card" onclick="viewProfile('${p.id}')">
-                        <div><strong>#${index + 1} ${p.name}</strong><br><small style="color:gray">${acc}% Préc. | ${p.matchesPlayed || 0} Matchs</small></div>
+                        <div><strong>#${index + 1} ${p.name}</strong> ${streakHtml}<br><small style="color:gray">${acc}% Préc. | ${p.matchesPlayed || 0} Matchs</small></div>
                         <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${Math.round(p.elo)}</div>
                     </div>`;
             });
         }
 
+        // --- HALL OF FAME ---
+        function renderHallOfFame() {
+            let hofDiv = document.getElementById('hof-content');
+            if(players.length === 0) { hofDiv.innerHTML = "<p>Jouez des matchs pour débloquer les records !</p>"; return; }
+
+            let maxEloP = [...players].sort((a,b) => (b.maxElo || b.elo) - (a.maxElo || a.elo))[0];
+            let sniperP = [...players].filter(p => p.totalShots >= 10).sort((a,b) => (b.hits/b.totalShots) - (a.hits/a.totalShots))[0];
+            let ironP = [...players].sort((a,b) => (b.matchesPlayed||0) - (a.matchesPlayed||0))[0];
+            let mvpP = [...players].sort((a,b) => (b.mvpCount||0) - (a.mvpCount||0))[0];
+
+            let html = "";
+            if(maxEloP) html += `<div class="list-card"><div><strong>📈 Le Prime (Max ELO)</strong><br>${maxEloP.name}</div><div style="color:var(--amber); font-size:20px;">${Math.round(maxEloP.maxElo || maxEloP.elo)}</div></div>`;
+            if(sniperP) html += `<div class="list-card"><div><strong>🎯 Dieu de la Précision</strong><br>${sniperP.name} (Min. 10 tirs)</div><div style="color:var(--amber); font-size:20px;">${((sniperP.hits/sniperP.totalShots)*100).toFixed(1)}%</div></div>`;
+            if(ironP) html += `<div class="list-card"><div><strong>🛡️ L'Iron Man</strong><br>${ironP.name}</div><div style="color:var(--amber); font-size:20px;">${ironP.matchesPlayed} Matchs</div></div>`;
+            if(mvpP) html += `<div class="list-card"><div><strong>⭐ Machine à MVP</strong><br>${mvpP.name}</div><div style="color:var(--amber); font-size:20px;">${mvpP.mvpCount} Titres</div></div>`;
+            
+            hofDiv.innerHTML = html;
+        }
+
+        // --- PROFIL & GRAPHIQUE ---
         function calculateNemesis(playerId) {
-            let lossesAgainst = {}; let winsAgainst = {};
+            let losses = {}; let wins = {};
             matchHistoryDB.forEach(m => {
                 let inA = m.teamAIds.includes(playerId); let inB = m.teamBIds.includes(playerId);
                 if(!inA && !inB) return;
-                let opponents = inA ? m.teamBIds : m.teamAIds;
-                let playerWon = (inA && m.winner === 'A') || (inB && m.winner === 'B');
-                opponents.forEach(oppId => {
-                    if(playerWon) winsAgainst[oppId] = (winsAgainst[oppId] || 0) + 1;
-                    else lossesAgainst[oppId] = (lossesAgainst[oppId] || 0) + 1;
-                });
+                let opp = inA ? m.teamBIds : m.teamAIds;
+                let won = (inA && m.winner === 'A') || (inB && m.winner === 'B');
+                opp.forEach(id => { if(won) wins[id] = (wins[id]||0)+1; else losses[id] = (losses[id]||0)+1; });
             });
-            let nemesisId = Object.keys(lossesAgainst).sort((a,b) => lossesAgainst[b] - lossesAgainst[a])[0];
-            let victimId = Object.keys(winsAgainst).sort((a,b) => winsAgainst[b] - winsAgainst[a])[0];
-            return { nemesis: nemesisId ? (players.find(p=>p.id == nemesisId)?.name || "?") : "Personne", victim: victimId ? (players.find(p=>p.id == victimId)?.name || "?") : "Personne" };
+            let nem = Object.keys(losses).sort((a,b)=>losses[b]-losses[a])[0];
+            let vic = Object.keys(wins).sort((a,b)=>wins[b]-wins[a])[0];
+            return { nemesis: nem ? (players.find(p=>p.id==nem)?.name || "?") : "Personne", victim: vic ? (players.find(p=>p.id==vic)?.name || "?") : "Personne" };
         }
 
         function viewProfile(id) {
@@ -219,25 +256,39 @@
             let advStats = calculateNemesis(id);
             document.getElementById('stat-name').innerText = p.name;
             document.getElementById('stat-elo').innerText = Math.round(p.elo);
+            document.getElementById('stat-max-elo').innerText = Math.round(p.maxElo || p.elo);
             document.getElementById('stat-accuracy').innerText = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) + '%' : '0%';
             document.getElementById('stat-wins-matches').innerText = `${p.wins || 0} / ${p.matchesPlayed || 0}`;
             document.getElementById('stat-mvp').innerText = p.mvpCount || 0; document.getElementById('stat-lvp').innerText = p.lvpCount || 0;
             document.getElementById('stat-nemesis').innerText = advStats.nemesis; document.getElementById('stat-victim').innerText = advStats.victim;
-            showScreen('player-profile');
-        }
+            
+            // Création du graphique ELO avec Chart.js
+            if(eloChartInstance) eloChartInstance.destroy();
+            let historyData = p.eloHistory || [0];
+            const ctx = document.getElementById('eloChart').getContext('2d');
+            eloChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: historyData.map((_, i) => i === 0 ? "Début" : `Match ${i}`),
+                    datasets: [{
+                        label: 'Évolution ELO',
+                        data: historyData,
+                        borderColor: '#FFBF00',
+                        backgroundColor: 'rgba(255, 191, 0, 0.2)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#FFBF00',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { ticks: { color: 'white' } }, x: { ticks: { display: false } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
 
-        function viewRefereeProfile(id) {
-            let r = referees.find(x => x.id == id); if(!r) return;
-            document.getElementById('ref-stat-name').innerText = r.name;
-            document.getElementById('ref-stat-matches').innerText = r.matchesRefereed || 0;
-            document.getElementById('ref-stat-errors').innerText = r.errorsCount || 0;
-            let favPlayer = "Personne";
-            if(r.playersRefereed && Object.keys(r.playersRefereed).length > 0) {
-                let favId = Object.keys(r.playersRefereed).sort((a,b) => r.playersRefereed[b] - r.playersRefereed[a])[0];
-                favPlayer = players.find(p => p.id == favId)?.name || "Inconnu";
-            }
-            document.getElementById('ref-stat-fav').innerText = favPlayer;
-            showScreen('referee-profile');
+            showScreen('player-profile');
         }
 
         // --- GESTION DES DONNÉES CLOUD ---
@@ -245,21 +296,17 @@
             let n = document.getElementById('new-player-name'); 
             if(n.value.trim()){ 
                 let newId = Date.now().toString();
-                db.collection("players").doc(newId).set({ id: newId, name: n.value.trim(), elo: 0, hits: 0, totalShots: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 }); 
+                // Nouveaux champs : maxElo, currentStreak, eloHistory
+                db.collection("players").doc(newId).set({ id: newId, name: n.value.trim(), elo: 0, maxElo: 0, currentStreak: 0, eloHistory: [0], hits: 0, totalShots: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 }); 
                 n.value = ""; 
             } 
         }
-        function deletePlayer(id) { if(confirm("Supprimer ce joueur de la ligue ?")){ db.collection("players").doc(id.toString()).delete(); } }
+        function deletePlayer(id) { if(confirm("Supprimer ce joueur ?")){ db.collection("players").doc(id.toString()).delete(); } }
         function renderPlayersManager() { document.getElementById('players-list-ui').innerHTML = players.map(p => `<div class="list-card"><span>${p.name}</span><button class="btn-delete" onclick="deletePlayer('${p.id}')">✖</button></div>`).join(''); }
         
-        function addReferee() { 
-            let n = document.getElementById('new-referee-name'); 
-            if(n.value.trim()){ 
-                let newId = Date.now().toString();
-                db.collection("referees").doc(newId).set({ id: newId, name: n.value.trim(), matchesRefereed: 0, errorsCount: 0, playersRefereed: {} }); 
-                n.value = ""; 
-            } 
-        }
+        // (Arbitres idem que la version précédente, gardé ici pour l'exécution complète)
+        function viewRefereeProfile(id) { let r = referees.find(x => x.id == id); if(!r) return; document.getElementById('ref-stat-name').innerText = r.name; document.getElementById('ref-stat-matches').innerText = r.matchesRefereed || 0; document.getElementById('ref-stat-errors').innerText = r.errorsCount || 0; let favPlayer = "Personne"; if(r.playersRefereed && Object.keys(r.playersRefereed).length > 0) { let favId = Object.keys(r.playersRefereed).sort((a,b) => r.playersRefereed[b] - r.playersRefereed[a])[0]; favPlayer = players.find(p => p.id == favId)?.name || "Inconnu"; } document.getElementById('ref-stat-fav').innerText = favPlayer; showScreen('referee-profile'); }
+        function addReferee() { let n = document.getElementById('new-referee-name'); if(n.value.trim()){ let newId = Date.now().toString(); db.collection("referees").doc(newId).set({ id: newId, name: n.value.trim(), matchesRefereed: 0, errorsCount: 0, playersRefereed: {} }); n.value = ""; } }
         function deleteReferee(id) { if(confirm("Supprimer cet arbitre ?")){ db.collection("referees").doc(id.toString()).delete(); } }
         function renderRefereesManager() { document.getElementById('referees-list-ui').innerHTML = referees.map(r => `<div class="list-card clickable-card" onclick="viewRefereeProfile('${r.id}')"><span>${r.name} 🔍</span><button class="btn-delete" onclick="event.stopPropagation(); deleteReferee('${r.id}')">✖</button></div>`).join(''); }
 
@@ -291,20 +338,12 @@
         }
 
         function registerShot(isHit) {
-            // Sauvegarde locale pour l'undo
             shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, playersClone: JSON.parse(JSON.stringify(players)) });
-            
-            // Effet visuel
             document.body.classList.remove('anim-hit', 'anim-miss'); void document.body.offsetWidth; document.body.classList.add(isHit ? 'anim-hit' : 'anim-miss');
             
-            // Mise à jour de la base de données
             let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
             let playerInDb = players.find(p => p.id == activePlayer.id);
-            if(playerInDb) { 
-                playerInDb.totalShots += 1; 
-                if (isHit) playerInDb.hits += 1; 
-                db.collection("players").doc(playerInDb.id).set(playerInDb); // Envoi au Cloud
-            }
+            if(playerInDb) { playerInDb.totalShots += 1; if (isHit) playerInDb.hits += 1; db.collection("players").doc(playerInDb.id).set(playerInDb); }
 
             if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
             updateLiveUI();
@@ -312,26 +351,16 @@
 
         function undoShot() {
             if(shotHistoryStack.length === 0) return alert("Rien à annuler !");
-            
-            // L'arbitre gagne un point d'erreur (Oups)
             let refObj = referees.find(r => r.id == currentRefId);
-            if(refObj) { 
-                refObj.errorsCount = (refObj.errorsCount || 0) + 1; 
-                db.collection("referees").doc(refObj.id).set(refObj); 
-            }
+            if(refObj) { refObj.errorsCount = (refObj.errorsCount || 0) + 1; db.collection("referees").doc(refObj.id).set(refObj); }
 
-            // On restaure l'état précédent
             let lastState = shotHistoryStack.pop();
             teamA = lastState.teamA; teamB = lastState.teamB; indexA = lastState.indexA; indexB = lastState.indexB; currentTeam = lastState.currentTeam; 
             
-            // On remet les stats du joueur qui a tiré comme elles étaient
             lastState.playersClone.forEach(oldP => {
                 let currentP = players.find(p => p.id == oldP.id);
-                if(JSON.stringify(oldP) !== JSON.stringify(currentP)) {
-                    db.collection("players").doc(oldP.id).set(oldP); // Rétablit dans le Cloud
-                }
+                if(JSON.stringify(oldP) !== JSON.stringify(currentP)) db.collection("players").doc(oldP.id).set(oldP);
             });
-
             updateLiveUI();
         }
 
@@ -357,11 +386,9 @@
 
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
             
-            // Enregistrement de l'historique du match dans le Cloud
             let matchId = Date.now().toString();
             db.collection("history").doc(matchId).set({ id: matchId, winner: winner, teamAIds: teamA.map(p=>p.id), teamBIds: teamB.map(p=>p.id) });
 
-            // Stats Arbitre
             let refObj = referees.find(r => r.id == currentRefId);
             if(refObj) {
                 refObj.matchesRefereed = (refObj.matchesRefereed || 0) + 1;
@@ -370,28 +397,38 @@
                 db.collection("referees").doc(refObj.id).set(refObj);
             }
 
-            // Calcul ELO
             let avgEloA = teamA.reduce((s, p) => s + p.elo, 0) / teamA.length; let avgEloB = teamB.reduce((s, p) => s + p.elo, 0) / teamB.length;
             let expA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400)); let expB = 1 - expA;
             let deltaA = Math.round(32 * ((winner === 'A' ? 1 : 0) - expA)); let deltaB = Math.round(32 * ((winner === 'B' ? 1 : 0) - expB));
 
-            // Mise à jour finale des joueurs
+            // Mise à jour finale des joueurs (Avec gestion des Séries et de l'Historique Graphique)
             [...teamA, ...teamB].forEach(p => { 
                 let dbP = players.find(x => x.id == p.id); 
                 if(dbP) { 
                     dbP.matchesPlayed = (dbP.matchesPlayed || 0) + 1; 
                     
+                    let playerWon = false;
                     if(teamA.find(a => a.id == p.id)) {
-                        dbP.elo += deltaA; if(winner === 'A') dbP.wins = (dbP.wins || 0) + 1;
+                        dbP.elo += deltaA; if(winner === 'A') { dbP.wins = (dbP.wins || 0) + 1; playerWon = true; }
                     } else {
-                        dbP.elo += deltaB; if(winner === 'B') dbP.wins = (dbP.wins || 0) + 1;
+                        dbP.elo += deltaB; if(winner === 'B') { dbP.wins = (dbP.wins || 0) + 1; playerWon = true; }
                     }
+
+                    // Calcul de la série 🔥/❄️
+                    dbP.currentStreak = dbP.currentStreak || 0;
+                    if(playerWon) { dbP.currentStreak = (dbP.currentStreak > 0) ? dbP.currentStreak + 1 : 1; } 
+                    else { dbP.currentStreak = (dbP.currentStreak < 0) ? dbP.currentStreak - 1 : -1; }
 
                     if(p.id == mvpId) { dbP.elo += 10; dbP.mvpCount = (dbP.mvpCount || 0) + 1; }
                     if(p.id == lvpId) { dbP.elo -= 5; dbP.lvpCount = (dbP.lvpCount || 0) + 1; }
                     if(dbP.elo < 0) dbP.elo = 0;
 
-                    db.collection("players").doc(dbP.id).set(dbP); // Sauvegarde dans le cloud
+                    // Sauvegarde pour le graphique et record ELO
+                    dbP.maxElo = Math.max(dbP.maxElo || 0, dbP.elo);
+                    dbP.eloHistory = dbP.eloHistory || [0]; // Sécurité pour les anciens profils
+                    dbP.eloHistory.push(Math.round(dbP.elo));
+
+                    db.collection("players").doc(dbP.id).set(dbP); 
                 }
             });
 
