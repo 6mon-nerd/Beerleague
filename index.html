@@ -81,13 +81,13 @@
             
             <h3>Art. 3 : Sanctions et pénalités</h3>
             <strong>Auto-sabotage :</strong> Bière renversée = l'équivalent en gorgées est transféré à l'adversaire.<br>
-            <strong>Tir Ennemi :</strong> Dégommer une canette adverse coûte 2 gorgées de pénalité + l'équivalent de ce qui est tombé, toujouers sous le jugement de l'arbitre.<br>
+            <strong>Tir Ennemi :</strong> Dégommer une canette adverse coûte 2 gorgées de pénalité + l'équivalent de ce qui est tombé, toujours sous le jugement de l'arbitre.<br>
             <strong>Le Tir de Merde 💩 :</strong> Un tir jugé honteux par l'arbitre et l'assemblée pénalise immédiatement l'équipe du tireur (qui boit 1 gorgée).
         </div>
 
         <h2>⚖️ JURISPRUDENCE</h2>
         <div class="setup-section">
-            <input type="text" id="new-jurisprudence">
+            <input type="text" id="new-jurisprudence" placeholder="Écrire une nouvelle règle...">
             <button onclick="addJurisprudence()">Ajouter au Registre</button>
             <div id="jurisprudence-list" style="margin-top: 15px;"></div>
         </div>
@@ -216,17 +216,28 @@
 
         function renderHallOfFame() {
             let hofDiv = document.getElementById('hof-content');
-            if(players.length === 0) { hofDiv.innerHTML = "<p>Jouez des matchs !</p>"; return; }
-            let maxEloP = [...players].sort((a,b) => (b.maxElo || b.elo) - (a.maxElo || a.elo))[0];
-            let sniperP = [...players].filter(p => p.totalShots >= 10).sort((a,b) => (b.hits/b.totalShots) - (a.hits/a.totalShots))[0];
-            let ironP = [...players].sort((a,b) => (b.matchesPlayed||0) - (a.matchesPlayed||0))[0];
-            let maconP = [...players].sort((a,b) => (b.tirDeMerdeCount||0) - (a.tirDeMerdeCount||0))[0]; // Le nouveau titre !
+            
+            // On ne prend que les joueurs qui ont joué au moins 1 match
+            let activePlayers = players.filter(p => (p.matchesPlayed || 0) > 0);
+            
+            if(activePlayers.length === 0) { 
+                hofDiv.innerHTML = "<p style='color:gray;'>Terminez au moins un match pour débloquer les records !</p>"; 
+                return; 
+            }
+
+            let maxEloP = [...activePlayers].sort((a,b) => (b.maxElo || b.elo || 0) - (a.maxElo || a.elo || 0))[0];
+            let sniperP = [...activePlayers].filter(p => (p.totalShots || 0) >= 10).sort((a,b) => (b.hits/b.totalShots) - (a.hits/a.totalShots))[0];
+            let ironP = [...activePlayers].sort((a,b) => (b.matchesPlayed||0) - (a.matchesPlayed||0))[0];
+            let maconP = [...activePlayers].filter(p => (p.tirDeMerdeCount || 0) > 0).sort((a,b) => (b.tirDeMerdeCount||0) - (a.tirDeMerdeCount||0))[0]; 
+            let mvpP = [...activePlayers].filter(p => (p.mvpCount || 0) > 0).sort((a,b) => (b.mvpCount||0) - (a.mvpCount||0))[0]; 
 
             let html = "";
-            if(maxEloP) html += `<div class="list-card"><div><strong>📈 Le Prime (Max ELO)</strong><br>${maxEloP.name}</div><div style="color:var(--amber); font-size:20px;">${Math.round(maxEloP.maxElo || maxEloP.elo)}</div></div>`;
-            if(sniperP) html += `<div class="list-card"><div><strong>🎯 Dieu de la Précision</strong><br>${sniperP.name}</div><div style="color:var(--amber); font-size:20px;">${((sniperP.hits/sniperP.totalShots)*100).toFixed(1)}%</div></div>`;
+            if(maxEloP) html += `<div class="list-card"><div><strong>📈 Le Prime (Max ELO)</strong><br>${maxEloP.name}</div><div style="color:var(--amber); font-size:20px;">${Math.round(maxEloP.maxElo || maxEloP.elo || 0)}</div></div>`;
+            if(sniperP) html += `<div class="list-card"><div><strong>🎯 Dieu de la Précision</strong><br>${sniperP.name} <br><small style="color:gray">(Min. 10 tirs)</small></div><div style="color:var(--amber); font-size:20px;">${((sniperP.hits/sniperP.totalShots)*100).toFixed(1)}%</div></div>`;
             if(ironP) html += `<div class="list-card"><div><strong>🛡️ L'Iron Man</strong><br>${ironP.name}</div><div style="color:var(--amber); font-size:20px;">${ironP.matchesPlayed} Matchs</div></div>`;
-            if(maconP && maconP.tirDeMerdeCount > 0) html += `<div class="list-card"><div><strong>🧱 Le Maçon</strong><br>${maconP.name}</div><div style="color:var(--poop-brown); font-size:20px;">${maconP.tirDeMerdeCount} Tirs 💩</div></div>`;
+            if(mvpP) html += `<div class="list-card"><div><strong>⭐ Machine à MVP</strong><br>${mvpP.name}</div><div style="color:var(--amber); font-size:20px;">${mvpP.mvpCount} Titres</div></div>`;
+            if(maconP) html += `<div class="list-card"><div><strong>🧱 Le Maçon</strong><br>${maconP.name}</div><div style="color:var(--poop-brown); font-size:20px;">${maconP.tirDeMerdeCount} Tirs 💩</div></div>`;
+            
             hofDiv.innerHTML = html;
         }
 
@@ -242,8 +253,8 @@
         }
         function renderJurisprudence() {
             let listDiv = document.getElementById('jurisprudence-list');
-            if(jurisprudenceDB.length === 0) listDiv.innerHTML = "<i style='color:gray'>Aucune jurisprudence pour le moment.</i>";
-            else listDiv.innerHTML = jurisprudenceDB.map(j => `<div class="list-card"><small style="color:var(--amber)">${j.date}</small><br>${j.text}</div>`).join('');
+            if(jurisprudenceDB.length === 0) listDiv.innerHTML = "<p style='color:gray'>Aucune jurisprudence pour le moment.</p>";
+            else listDiv.innerHTML = jurisprudenceDB.map(j => `<div class="list-card" style="display:block;"><small style="color:var(--amber)">${j.date}</small><br>${j.text}</div>`).join('');
         }
 
         // --- PROFIL ---
@@ -314,18 +325,16 @@
             document.getElementById('active-player-name').innerText = currentTeam === 'A' ? teamA[indexA].name : teamB[indexB].name;
         }
 
-        // LE NOUVEAU SYSTÈME DE TIR (Avec le Tir de Merde)
-        function registerShot(result) { // result peut être 'hit', 'miss', ou 'merde'
+        function registerShot(result) { 
             shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, playersClone: JSON.parse(JSON.stringify(players)) });
             
             let isHit = (result === 'hit');
             let isMerde = (result === 'merde');
 
-            // Animations visuelles
             document.body.classList.remove('anim-hit', 'anim-miss', 'anim-merde'); 
             void document.body.offsetWidth; 
             if(isHit) document.body.classList.add('anim-hit');
-            else if(isMerde) document.body.classList.add('anim-merde'); // Flash marron
+            else if(isMerde) document.body.classList.add('anim-merde'); 
             else document.body.classList.add('anim-miss');
             
             let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
@@ -334,7 +343,7 @@
             if(playerInDb) { 
                 playerInDb.totalShots += 1; 
                 if (isHit) playerInDb.hits += 1; 
-                if (isMerde) playerInDb.tirDeMerdeCount = (playerInDb.tirDeMerdeCount || 0) + 1; // Le compteur monte !
+                if (isMerde) playerInDb.tirDeMerdeCount = (playerInDb.tirDeMerdeCount || 0) + 1; 
                 db.collection("players").doc(playerInDb.id).set(playerInDb); 
             }
 
