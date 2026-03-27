@@ -63,11 +63,28 @@
             <button onclick="goToSetup()">Nouveau Match</button>
             <button class="btn-secondary" onclick="showScreen('hall-of-fame')">🏆 Hall of Fame</button>
             <button class="btn-secondary" onclick="showScreen('rules-screen')">📜 Règles & Jurisprudence</button>
-            <button class="btn-secondary" onclick="showScreen('manage-players')">Gérer Joueurs</button>
-            <button class="btn-secondary" onclick="showScreen('manage-referees')">Gérer Arbitres</button>
+            <button class="btn-secondary" onclick="showScreen('settings-screen')">⚙️ Paramètres</button>
         </div>
         <h2>Classement Ligue</h2>
         <div id="leaderboard-list">Chargement des données Cloud...</div>
+    </div>
+
+    <div id="settings-screen" class="screen">
+        <h1>⚙️ PARAMÈTRES</h1>
+        <div class="flex-row">
+            <button onclick="showScreen('manage-players')">Gérer Joueurs</button>
+            <button onclick="showScreen('manage-referees')">Gérer Arbitres</button>
+        </div>
+        
+        <h2>Règles du Mode Chaos 🎲</h2>
+        <div class="setup-section">
+            <p style="color:gray; font-size: 12px;">Ajoutez vos propres défis délirants qui tomberont au hasard pendant le mode Chaos.</p>
+            <input type="text" id="new-chaos-rule" placeholder="Ex: Faire 5 pompes avant de tirer...">
+            <button onclick="addChaosRule()">Ajouter la règle</button>
+            <div id="chaos-rules-list" style="margin-top: 15px;"></div>
+        </div>
+        
+        <button class="btn-secondary" onclick="showScreen('dashboard')">Retour Menu</button>
     </div>
 
     <div id="rules-screen" class="screen">
@@ -122,8 +139,8 @@
     </div>
 
     <div id="referee-profile" class="screen"><h1 id="ref-stat-name">Nom</h1><div class="setup-section"><div class="list-card">Matchs Arbitrés: <strong id="ref-stat-matches" style="color:var(--amber); font-size:20px;"></strong></div><div class="list-card">Erreurs (Oups): <strong id="ref-stat-errors"></strong></div><div class="list-card">Joueur le plus arbitré: <strong id="ref-stat-fav"></strong></div></div><button class="btn-secondary" onclick="showScreen('manage-referees')">Retour</button></div>
-    <div id="manage-players" class="screen"><h2>Effectif</h2><input type="text" id="new-player-name" placeholder="Nom du joueur..."><button onclick="addPlayer()">Ajouter Joueur</button><div id="players-list-ui" style="margin-top: 20px;"></div><button class="btn-secondary" onclick="showScreen('dashboard')">Retour Menu</button></div>
-    <div id="manage-referees" class="screen"><h2>Corps Arbitral</h2><input type="text" id="new-referee-name" placeholder="Nom de l'arbitre..."><button onclick="addReferee()">Ajouter Arbitre</button><div id="referees-list-ui" style="margin-top: 20px;"></div><button class="btn-secondary" onclick="showScreen('dashboard')">Retour Menu</button></div>
+    <div id="manage-players" class="screen"><h2>Effectif</h2><input type="text" id="new-player-name" placeholder="Nom du joueur..."><button onclick="addPlayer()">Ajouter Joueur</button><div id="players-list-ui" style="margin-top: 20px;"></div><button class="btn-secondary" onclick="showScreen('settings-screen')">Retour Paramètres</button></div>
+    <div id="manage-referees" class="screen"><h2>Corps Arbitral</h2><input type="text" id="new-referee-name" placeholder="Nom de l'arbitre..."><button onclick="addReferee()">Ajouter Arbitre</button><div id="referees-list-ui" style="margin-top: 20px;"></div><button class="btn-secondary" onclick="showScreen('settings-screen')">Retour Paramètres</button></div>
 
     <div id="setup-match" class="screen">
         <h2>Configuration du Match</h2>
@@ -205,17 +222,16 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        let players = [], referees = [], matchHistoryDB = [], jurisprudenceDB = [];
+        let players = [], referees = [], matchHistoryDB = [], jurisprudenceDB = [], customChaosRules = [];
         let teamA = [], teamB = [], currentRefId = "", currentTeam = 'A', indexA = 0, indexB = 0;
         let shotHistoryStack = []; 
         let eloChartInstance = null; 
         
-        // Nouvelles Variables Match
         let currentMode = "competitif";
         let teamAName = "Équipe A";
         let teamBName = "Équipe B";
 
-        // Générateur de Noms Épiques
+        // --- GÉNÉRATEURS ET RÈGLES ---
         const funnyTeamNames = ["Le FC Pinte", "Real MaBière", "Atletico Demi", "Les Soiffards", "Bière Munich", "Paris Saint-Goulot", "Inter Pression", "Boca Jaunes", "AS Levure", "Sporting Tonneau", "Les Piliers de Bar", "Boisson-Mönchengladbach"];
         function getRandomTeamName(exclude = "") {
             let name = funnyTeamNames[Math.floor(Math.random() * funnyTeamNames.length)];
@@ -223,8 +239,7 @@
             return name;
         }
 
-        // Règles du Chaos
-        const chaosRules = [
+        const baseChaosRules = [
             "Tirer avec la MAUVAISE MAIN ✋",
             "Tirer en FERMANT UN ŒIL 👁️",
             "Faire 3 TOURS sur soi-même avant de tirer 🌪️",
@@ -235,8 +250,11 @@
             "Tir avec REBOND OBLIGATOIRE 🏓",
             "L'équipe adverse a le droit d'HURLER pour déconcentrer 🗣️"
         ];
+        
         function rollChaos() {
-            let rule = chaosRules[Math.floor(Math.random() * chaosRules.length)];
+            // Mélange les règles de base et les règles créées par les joueurs
+            let allRules = [...baseChaosRules, ...customChaosRules.map(r => r.text)];
+            let rule = allRules[Math.floor(Math.random() * allRules.length)];
             document.getElementById('chaos-rule-text').innerText = "🔥 " + rule;
         }
 
@@ -245,7 +263,14 @@
         db.collection("referees").onSnapshot((snapshot) => { referees = []; snapshot.forEach((doc) => referees.push(doc.data())); });
         db.collection("history").onSnapshot((snapshot) => { matchHistoryDB = []; snapshot.forEach((doc) => matchHistoryDB.push(doc.data())); });
         db.collection("rules").doc("jurisprudence").onSnapshot((doc) => { if(doc.exists) { jurisprudenceDB = doc.data().items || []; } if(document.getElementById('rules-screen').classList.contains('active-screen')) renderJurisprudence(); });
+        
+        // Synchro des règles Chaos personnalisées
+        db.collection("rules").doc("chaos").onSnapshot((doc) => { 
+            if(doc.exists) { customChaosRules = doc.data().items || []; } 
+            if(document.getElementById('settings-screen').classList.contains('active-screen')) renderChaosRules(); 
+        });
 
+        // --- NAVIGATION ---
         function showScreen(screenId) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
             document.getElementById(screenId).classList.add('active-screen');
@@ -254,15 +279,44 @@
             if(screenId === 'manage-referees') renderRefereesManager();
             if(screenId === 'hall-of-fame') renderHallOfFame();
             if(screenId === 'rules-screen') renderJurisprudence();
+            if(screenId === 'settings-screen') renderChaosRules();
         }
 
-        // --- DASHBOARD, HOF, PROFIL, GESTIONS ---
+        // --- DASHBOARD & HOF ---
         function renderDashboard() { const listDiv = document.getElementById('leaderboard-list'); listDiv.innerHTML = ''; if(players.length === 0) { listDiv.innerHTML = "<p style='color:gray'>Aucun joueur.</p>"; return; } [...players].sort((a, b) => b.elo - a.elo).forEach((p, index) => { let acc = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) : 0; let streakHtml = ""; let streak = p.currentStreak || 0; if(streak >= 3) streakHtml = `<span class="streak" style="color:#FF5722;">🔥x${streak}</span>`; else if(streak <= -3) streakHtml = `<span class="streak" style="color:#03A9F4;">❄️x${Math.abs(streak)}</span>`; listDiv.innerHTML += ` <div class="list-card clickable-card" onclick="viewProfile('${p.id}')"> <div><strong>#${index + 1} ${p.name}</strong> ${streakHtml}<br><small style="color:gray">${acc}% Préc. | ${p.matchesPlayed || 0} Matchs</small></div> <div style="color: var(--amber); font-weight: bold; font-size: 20px;">${Math.round(p.elo)}</div> </div>`; }); }
         function renderHallOfFame() { let hofDiv = document.getElementById('hof-content'); let activePlayers = players.filter(p => (p.matchesPlayed || 0) > 0); if(activePlayers.length === 0) { hofDiv.innerHTML = "<p style='color:gray;'>Terminez au moins un match pour débloquer les records !</p>"; return; } let maxEloP = [...activePlayers].sort((a,b) => (b.maxElo || b.elo || 0) - (a.maxElo || a.elo || 0))[0]; let sniperP = [...activePlayers].filter(p => (p.totalShots || 0) >= 10).sort((a,b) => (b.hits/b.totalShots) - (a.hits/a.totalShots))[0]; let ironP = [...activePlayers].sort((a,b) => (b.matchesPlayed||0) - (a.matchesPlayed||0))[0]; let maconP = [...activePlayers].filter(p => (p.tirDeMerdeCount || 0) > 0).sort((a,b) => (b.tirDeMerdeCount||0) - (a.tirDeMerdeCount||0))[0]; let mvpP = [...activePlayers].filter(p => (p.mvpCount || 0) > 0).sort((a,b) => (b.mvpCount||0) - (a.mvpCount||0))[0]; let html = ""; if(maxEloP) html += `<div class="list-card"><div><strong>📈 Le Prime (Max ELO)</strong><br>${maxEloP.name}</div><div style="color:var(--amber); font-size:20px;">${Math.round(maxEloP.maxElo || maxEloP.elo || 0)}</div></div>`; if(sniperP) html += `<div class="list-card"><div><strong>🎯 Dieu de la Précision</strong><br>${sniperP.name} <br><small style="color:gray">(Min. 10 tirs)</small></div><div style="color:var(--amber); font-size:20px;">${((sniperP.hits/sniperP.totalShots)*100).toFixed(1)}%</div></div>`; if(ironP) html += `<div class="list-card"><div><strong>🛡️ L'Iron Man</strong><br>${ironP.name}</div><div style="color:var(--amber); font-size:20px;">${ironP.matchesPlayed} Matchs</div></div>`; if(mvpP) html += `<div class="list-card"><div><strong>⭐ Machine à MVP</strong><br>${mvpP.name}</div><div style="color:var(--amber); font-size:20px;">${mvpP.mvpCount} Titres</div></div>`; if(maconP) html += `<div class="list-card"><div><strong>🧱 Le Maçon</strong><br>${maconP.name}</div><div style="color:var(--poop-brown); font-size:20px;">${maconP.tirDeMerdeCount} Tirs 💩</div></div>`; hofDiv.innerHTML = html; }
+        
+        // --- JURISPRUDENCE ---
         function addJurisprudence() { let input = document.getElementById('new-jurisprudence'); if(input.value.trim() !== "") { let newItem = { date: new Date().toLocaleDateString(), text: input.value.trim() }; jurisprudenceDB.push(newItem); db.collection("rules").doc("jurisprudence").set({ items: jurisprudenceDB }); input.value = ""; } }
         function renderJurisprudence() { let listDiv = document.getElementById('jurisprudence-list'); if(jurisprudenceDB.length === 0) listDiv.innerHTML = "<p style='color:gray'>Aucune jurisprudence pour le moment.</p>"; else listDiv.innerHTML = jurisprudenceDB.map(j => `<div class="list-card" style="display:block;"><small style="color:var(--amber)">${j.date}</small><br>${j.text}</div>`).join(''); }
+
+        // --- GESTION DU MODE CHAOS (NOUVEAU) ---
+        function addChaosRule() {
+            let input = document.getElementById('new-chaos-rule');
+            if(input.value.trim() !== "") {
+                let newItem = { id: Date.now(), text: input.value.trim() };
+                customChaosRules.push(newItem);
+                db.collection("rules").doc("chaos").set({ items: customChaosRules });
+                input.value = "";
+            }
+        }
+        function deleteChaosRule(id) {
+            if(confirm("Supprimer cette règle Chaos ?")) {
+                customChaosRules = customChaosRules.filter(r => r.id !== id);
+                db.collection("rules").doc("chaos").set({ items: customChaosRules });
+            }
+        }
+        function renderChaosRules() {
+            let listDiv = document.getElementById('chaos-rules-list');
+            if(customChaosRules.length === 0) listDiv.innerHTML = "<p style='color:gray'><i>Aucune règle perso. Les 9 règles de base sont actives.</i></p>";
+            else listDiv.innerHTML = customChaosRules.map(r => `<div class="list-card"><span>${r.text}</span><button class="btn-delete" onclick="deleteChaosRule(${r.id})">✖</button></div>`).join('');
+        }
+
+        // --- PROFIL ---
         function calculateNemesis(playerId) { let losses = {}; let wins = {}; matchHistoryDB.forEach(m => { let inA = m.teamAIds.includes(playerId); let inB = m.teamBIds.includes(playerId); if(!inA && !inB) return; let opp = inA ? m.teamBIds : m.teamAIds; let won = (inA && m.winner === 'A') || (inB && m.winner === 'B'); opp.forEach(id => { if(won) wins[id] = (wins[id]||0)+1; else losses[id] = (losses[id]||0)+1; }); }); let nem = Object.keys(losses).sort((a,b)=>losses[b]-losses[a])[0]; let vic = Object.keys(wins).sort((a,b)=>wins[b]-wins[a])[0]; return { nemesis: nem ? (players.find(p=>p.id==nem)?.name || "?") : "Personne", victim: vic ? (players.find(p=>p.id==vic)?.name || "?") : "Personne" }; }
         function viewProfile(id) { let p = players.find(x => x.id == id); if(!p) return; let advStats = calculateNemesis(id); document.getElementById('stat-name').innerText = p.name; document.getElementById('stat-elo').innerText = Math.round(p.elo); document.getElementById('stat-max-elo').innerText = Math.round(p.maxElo || p.elo); document.getElementById('stat-accuracy').innerText = p.totalShots > 0 ? ((p.hits / p.totalShots) * 100).toFixed(1) + '%' : '0%'; document.getElementById('stat-merde').innerText = p.tirDeMerdeCount || 0; document.getElementById('stat-wins-matches').innerText = `${p.wins || 0} / ${p.matchesPlayed || 0}`; document.getElementById('stat-mvp').innerText = p.mvpCount || 0; document.getElementById('stat-lvp').innerText = p.lvpCount || 0; document.getElementById('stat-nemesis').innerText = advStats.nemesis; document.getElementById('stat-victim').innerText = advStats.victim; if(eloChartInstance) eloChartInstance.destroy(); let historyData = p.eloHistory || [0]; const ctx = document.getElementById('eloChart').getContext('2d'); eloChartInstance = new Chart(ctx, { type: 'line', data: { labels: historyData.map((_, i) => i === 0 ? "Début" : `Match ${i}`), datasets: [{ label: 'ELO', data: historyData, borderColor: '#FFBF00', backgroundColor: 'rgba(255, 191, 0, 0.2)', borderWidth: 3, pointBackgroundColor: '#FFBF00', fill: true, tension: 0.3 }] }, options: { responsive: true, scales: { y: { ticks: { color: 'white' } }, x: { ticks: { display: false } } }, plugins: { legend: { display: false } } } }); showScreen('player-profile'); }
+
+        // --- GESTIONS BASIQUES ---
         function addPlayer() { let n = document.getElementById('new-player-name'); if(n.value.trim()){ let newId = Date.now().toString(); db.collection("players").doc(newId).set({ id: newId, name: n.value.trim(), elo: 0, maxElo: 0, currentStreak: 0, eloHistory: [0], hits: 0, totalShots: 0, tirDeMerdeCount: 0, matchesPlayed: 0, wins: 0, mvpCount: 0, lvpCount: 0 }); n.value = ""; } }
         function deletePlayer(id) { if(confirm("Supprimer ?")){ db.collection("players").doc(id.toString()).delete(); } }
         function renderPlayersManager() { document.getElementById('players-list-ui').innerHTML = players.map(p => `<div class="list-card"><span>${p.name}</span><button class="btn-delete" onclick="deletePlayer('${p.id}')">✖</button></div>`).join(''); }
@@ -271,18 +325,15 @@
         function renderRefereesManager() { document.getElementById('referees-list-ui').innerHTML = referees.map(r => `<div class="list-card clickable-card" onclick="viewRefereeProfile('${r.id}')"><span>${r.name} 🔍</span><button class="btn-delete" onclick="event.stopPropagation(); deleteReferee('${r.id}')">✖</button></div>`).join(''); }
         function viewRefereeProfile(id) { let r = referees.find(x => x.id == id); if(!r) return; document.getElementById('ref-stat-name').innerText = r.name; document.getElementById('ref-stat-matches').innerText = r.matchesRefereed || 0; document.getElementById('ref-stat-errors').innerText = r.errorsCount || 0; let favPlayer = "Personne"; if(r.playersRefereed && Object.keys(r.playersRefereed).length > 0) { let favId = Object.keys(r.playersRefereed).sort((a,b) => r.playersRefereed[b] - r.playersRefereed[a])[0]; favPlayer = players.find(p => p.id == favId)?.name || "Inconnu"; } document.getElementById('ref-stat-fav').innerText = favPlayer; showScreen('referee-profile'); }
 
-        // --- MATCH SETUP AVEC NOMS & MODES ---
+        // --- MATCH SETUP ---
         function goToSetup() {
             let htmlA = ''; let htmlB = '';
             players.forEach(p => { htmlA += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-a"> ${p.name}</label>`; htmlB += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-b"> ${p.name}</label>`; });
             document.getElementById('setup-team-a').innerHTML = htmlA; document.getElementById('setup-team-b').innerHTML = htmlB;
             document.getElementById('setup-referee').innerHTML = referees.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
             
-            let nameA = getRandomTeamName();
-            let nameB = getRandomTeamName(nameA);
-            document.getElementById('setup-name-a').value = nameA;
-            document.getElementById('setup-name-b').value = nameB;
-
+            let nameA = getRandomTeamName(); let nameB = getRandomTeamName(nameA);
+            document.getElementById('setup-name-a').value = nameA; document.getElementById('setup-name-b').value = nameB;
             showScreen('setup-match');
         }
 
@@ -316,7 +367,6 @@
 
         function registerShot(result) { 
             shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, playersClone: JSON.parse(JSON.stringify(players)) });
-            
             let isHit = (result === 'hit'); let isMerde = (result === 'merde');
 
             document.body.classList.remove('anim-hit', 'anim-miss', 'anim-merde'); void document.body.offsetWidth; 
@@ -331,7 +381,6 @@
                 if (isMerde) playerInDb.tirDeMerdeCount = (playerInDb.tirDeMerdeCount || 0) + 1; 
                 db.collection("players").doc(playerInDb.id).set(playerInDb); 
             }
-
             if (currentTeam === 'A') { indexA = (indexA + 1) % teamA.length; currentTeam = 'B'; } else { indexB = (indexB + 1) % teamB.length; currentTeam = 'A'; }
             
             document.getElementById('chaos-rule-text').innerText = "";
@@ -366,7 +415,6 @@
             let winName = winVal === 'A' ? teamAName : teamBName;
             let mvp = document.getElementById('mvp-select').options[document.getElementById('mvp-select').selectedIndex].text;
             let modeTxt = currentMode === 'chaos' ? '🎲 Mode Chaos' : '🏆 Compétitif';
-            
             let text = `🍺 Beerleague (${modeTxt}) \nVictoire de : ${winName} ! \n⭐ MVP : ${mvp}`;
             if(navigator.share) { navigator.share({ title: 'Résultat Beerleague', text: text }); } else { navigator.clipboard.writeText(text); alert("Résultat copié !"); }
         }
@@ -378,22 +426,16 @@
             let matchId = Date.now().toString();
             db.collection("history").doc(matchId).set({ id: matchId, mode: currentMode, winner: winner, teamAName: teamAName, teamBName: teamBName, teamAIds: teamA.map(p=>p.id), teamBIds: teamB.map(p=>p.id) });
 
-            // Stats de l'Arbitre
             let refObj = referees.find(r => r.id == currentRefId);
             if(refObj) { refObj.matchesRefereed = (refObj.matchesRefereed || 0) + 1; refObj.playersRefereed = refObj.playersRefereed || {}; [...teamA, ...teamB].forEach(p => { refObj.playersRefereed[p.id] = (refObj.playersRefereed[p.id] || 0) + 1; }); db.collection("referees").doc(refObj.id).set(refObj); }
 
-            // Calcul de l'ELO UNIQUEMENT si le mode est Compétitif
             let deltaA = 0; let deltaB = 0;
             if (currentMode === 'competitif') {
-                let avgEloA = teamA.reduce((s, p) => s + p.elo, 0) / teamA.length; 
-                let avgEloB = teamB.reduce((s, p) => s + p.elo, 0) / teamB.length;
-                let expA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400)); 
-                let expB = 1 - expA;
-                deltaA = Math.round(32 * ((winner === 'A' ? 1 : 0) - expA)); 
-                deltaB = Math.round(32 * ((winner === 'B' ? 1 : 0) - expB));
+                let avgEloA = teamA.reduce((s, p) => s + p.elo, 0) / teamA.length; let avgEloB = teamB.reduce((s, p) => s + p.elo, 0) / teamB.length;
+                let expA = 1 / (1 + Math.pow(10, (avgEloB - avgEloA) / 400)); let expB = 1 - expA;
+                deltaA = Math.round(32 * ((winner === 'A' ? 1 : 0) - expA)); deltaB = Math.round(32 * ((winner === 'B' ? 1 : 0) - expB));
             }
 
-            // Mise à jour de toutes les autres stats pour tout le monde
             [...teamA, ...teamB].forEach(p => { 
                 let dbP = players.find(x => x.id == p.id); 
                 if(dbP) { 
@@ -408,31 +450,18 @@
                         if(winner === 'B') { dbP.wins = (dbP.wins || 0) + 1; playerWon = true; } 
                     }
 
-                    // Séries de Victoire
                     dbP.currentStreak = dbP.currentStreak || 0;
                     if(playerWon) { dbP.currentStreak = (dbP.currentStreak > 0) ? dbP.currentStreak + 1 : 1; } 
                     else { dbP.currentStreak = (dbP.currentStreak < 0) ? dbP.currentStreak - 1 : -1; }
 
-                    // MVP / LVP
-                    if(p.id == mvpId) { 
-                        if (currentMode === 'competitif') dbP.elo += 10; 
-                        dbP.mvpCount = (dbP.mvpCount || 0) + 1; 
-                    }
-                    if(p.id == lvpId) { 
-                        if (currentMode === 'competitif') dbP.elo -= 5; 
-                        dbP.lvpCount = (dbP.lvpCount || 0) + 1; 
-                    }
-                    
-                    // Sécurité ELO
+                    if(p.id == mvpId) { if (currentMode === 'competitif') dbP.elo += 10; dbP.mvpCount = (dbP.mvpCount || 0) + 1; }
+                    if(p.id == lvpId) { if (currentMode === 'competitif') dbP.elo -= 5; dbP.lvpCount = (dbP.lvpCount || 0) + 1; }
                     if(dbP.elo < 0) dbP.elo = 0;
 
-                    // On ne modifie le graphique et le record que si c'est compétitif
                     if (currentMode === 'competitif') {
                         dbP.maxElo = Math.max(dbP.maxElo || 0, dbP.elo);
-                        dbP.eloHistory = dbP.eloHistory || [0]; 
-                        dbP.eloHistory.push(Math.round(dbP.elo));
+                        dbP.eloHistory = dbP.eloHistory || [0]; dbP.eloHistory.push(Math.round(dbP.elo));
                     }
-
                     db.collection("players").doc(dbP.id).set(dbP); 
                 }
             });
