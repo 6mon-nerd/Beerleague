@@ -175,6 +175,7 @@
             <h3 style="color: white; margin-top: 0;">Mode de Jeu 🎮</h3>
             <select id="setup-mode">
                 <option value="competitif">🏆 Compétitif (Classique Elo)</option>
+                <option value="amical">🤝 Match Amical (Classique sans Elo)</option>
                 <option value="chaos">🎲 Mode Chaos (Règles Aléatoires)</option>
                 <option value="cardio">🏃 Mode Cardio (Vitesse & Bières)</option>
             </select>
@@ -420,7 +421,11 @@
             currentTeam = 'A'; indexA = 0; indexB = 0;
             document.getElementById('live-referee').innerText = refObj ? refObj.name : "Arbitre";
             
-            let modeText = currentMode === 'chaos' ? 'Mode Chaos 🎲 (Elo figé)' : (currentMode === 'cardio' ? 'Mode Cardio 🏃 (Elo figé)' : 'Compétitif 🏆');
+            let modeText = 'Compétitif 🏆';
+            if(currentMode === 'chaos') modeText = 'Mode Chaos 🎲 (Elo figé)';
+            else if(currentMode === 'cardio') modeText = 'Mode Cardio 🏃 (Elo figé)';
+            else if(currentMode === 'amical') modeText = 'Match Amical 🤝 (Elo figé)';
+
             document.getElementById('live-mode-text').innerText = modeText;
             document.getElementById('chaos-panel').style.display = currentMode === 'chaos' ? 'block' : 'none';
             document.getElementById('chaos-rule-text').innerText = ""; 
@@ -517,7 +522,12 @@
             let winVal = document.getElementById('winner-select').value;
             let winName = winVal === 'A' ? teamAName : teamBName;
             let mvp = document.getElementById('mvp-select').options[document.getElementById('mvp-select').selectedIndex].text;
-            let modeTxt = currentMode === 'chaos' ? '🎲 Mode Chaos' : (currentMode === 'cardio' ? '🏃 Mode Cardio' : '🏆 Compétitif');
+            
+            let modeTxt = '🏆 Compétitif';
+            if(currentMode === 'chaos') modeTxt = '🎲 Mode Chaos';
+            else if(currentMode === 'cardio') modeTxt = '🏃 Mode Cardio';
+            else if(currentMode === 'amical') modeTxt = '🤝 Match Amical';
+
             let text = `🍺 Beerleague (${modeTxt}) \nVictoire de : ${winName} ! \n⭐ MVP : ${mvp}`;
             if(navigator.share) { navigator.share({ title: 'Résultat Beerleague', text: text }); } else { navigator.clipboard.writeText(text); alert("Résultat copié !"); }
         }
