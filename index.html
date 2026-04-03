@@ -23,6 +23,7 @@
         button.btn-chaos { background-color: var(--chaos-purple); color: white; border: none; font-size: 18px; margin-top: 15px; box-shadow: 0 0 10px var(--chaos-purple);}
         button.btn-undo { background-color: transparent; color: gray; border: 1px solid gray; padding: 10px; font-size: 14px; margin-top: 20px;}
         button.btn-delete { background-color: var(--miss-red); color: white; padding: 10px; width: auto; font-size: 14px; margin: 0; border-radius: 6px; }
+        button.btn-timeout { background-color: #2196F3; color: white; font-size: 14px; padding: 10px; width: 45%; margin: 5px; }
         input[type="text"], input[type="number"], select { background-color: var(--surface); color: white; border: 1px solid gray; padding: 15px; border-radius: 8px; font-size: 16px; width: 80%; max-width: 350px; margin-bottom: 10px; }
         .team-name-input { background-color: transparent !important; border: none !important; color: white !important; font-size: 20px !important; font-weight: bold; text-align: left; padding: 0 !important; margin-bottom: 10px; border-bottom: 2px dashed gray !important; border-radius: 0 !important; width: 100% !important;}
         
@@ -117,8 +118,11 @@
 
             <h3>Art. 4 : Le Mode Cardio 🏃</h3>
             <strong>L'Objectif :</strong> Un total de bières à siffler est fixé pour l'ensemble des équipes.<br>
-            <strong>La Mécanique :</strong> Dès qu'un joueur termine sa canette, l'Arbitre valide (+1 Bière) et le joueur en ouvre une nouvelle. L'application enregistre qui a bu.<br>
-            <strong>La Victoire :</strong> Le match s'arrête dès que le quota est atteint. L'équipe qui en a bu le plus gagne. L'abandon d'une équipe entraîne une défaite par K.O.
+            <strong>La Mécanique :</strong> Dès qu'un joueur termine sa canette, l'Arbitre valide (+1 Bière) et le joueur en ouvre une nouvelle.<br>
+            <strong>La Victoire :</strong> Le match s'arrête dès que le quota est atteint.
+
+            <h3>Art. 5 : Le Time Out ⏸️</h3>
+            En mode <strong>Compétitif uniquement</strong>, chaque équipe a le droit à <strong>un (1) seul Time Out</strong> par match pour discuter stratégie. Il lance un compte à rebours sacré et immuable de <strong>6 minutes et 28 secondes</strong>.
         </div>
 
         <h2>⚖️ JURISPRUDENCE</h2>
@@ -161,6 +165,16 @@
             <h2 style="color:white; margin-bottom:20px;">Qui a fini sa bière ? 🍺</h2>
             <div id="beer-players-list" class="flex-row" style="margin-bottom:20px;"></div>
             <button class="btn-secondary" onclick="document.getElementById('beer-modal').style.display='none'">Annuler</button>
+        </div>
+    </div>
+
+    <div id="timeout-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; text-align:center;">
+        <div style="margin-top:30vh; padding:20px;">
+            <h1 style="color:var(--amber); font-size:50px; margin-bottom: 0;">TIME OUT ⏸️</h1>
+            <h3 id="timeout-team-caller" style="color:gray; font-weight: normal;">Demandé par ...</h3>
+            <h1 id="timeout-timer" style="font-size:80px; color:var(--miss-red); margin:20px 0; font-family: monospace;">06:28</h1>
+            <p style="color:gray; margin-bottom: 30px;">Profitez de cette pause sacrée pour revoir votre stratégie.</p>
+            <button class="btn-secondary" onclick="endTimeOut()">Forcer la reprise du match</button>
         </div>
     </div>
 
@@ -242,7 +256,14 @@
             <button class="btn-merde" onclick="registerShot('merde')">💩 TIR DE MERDE</button>
         </div>
         
-        <button class="btn-undo" onclick="undoShot()">↩ Oups ! Annuler le dernier tir</button><br><br>
+        <button class="btn-undo" onclick="undoShot()">↩ Oups ! Annuler le dernier tir</button>
+        
+        <div id="timeout-panel" class="flex-row" style="margin-top: 20px; display: none;">
+            <button id="btn-timeout-a" class="btn-timeout" onclick="startTimeOut('A')">⏸️ Time Out A</button>
+            <button id="btn-timeout-b" class="btn-timeout" onclick="startTimeOut('B')">⏸️ Time Out B</button>
+        </div>
+
+        <br><br>
         <button style="margin-top: 20px; background-color: var(--surface); color: white;" onclick="goToEndScreen()">Fin du Match</button>
     </div>
 
@@ -284,6 +305,11 @@
         
         // Variables Cardio
         let currentBeerTeam = ''; let beersA = 0; let beersB = 0; let targetBeers = 0; let matchBeersDetails = [];
+
+        // Variables Time Out
+        let timeoutUsedA = false;
+        let timeoutUsedB = false;
+        let timeoutInterval;
 
         // Gestion de l'affichage de l'option Cardio dans le Setup
         document.getElementById('setup-mode').addEventListener('change', function(e) {
@@ -413,6 +439,19 @@
                 document.getElementById('cardio-panel').style.display = 'none';
             }
 
+            // Logique Time Out (Seulement en Compétitif)
+            timeoutUsedA = false;
+            timeoutUsedB = false;
+            if(currentMode === 'competitif') {
+                document.getElementById('timeout-panel').style.display = 'flex';
+                document.getElementById('btn-timeout-a').style.display = 'block';
+                document.getElementById('btn-timeout-b').style.display = 'block';
+                document.getElementById('btn-timeout-a').innerText = `⏸️ Time Out ${document.getElementById('setup-name-a').value || "Équipe A"}`;
+                document.getElementById('btn-timeout-b').innerText = `⏸️ Time Out ${document.getElementById('setup-name-b').value || "Équipe B"}`;
+            } else {
+                document.getElementById('timeout-panel').style.display = 'none';
+            }
+
             currentRefId = document.getElementById('setup-referee').value;
             let refObj = referees.find(r => r.id == currentRefId);
             teamAName = document.getElementById('setup-name-a').value || "Équipe A";
@@ -438,39 +477,48 @@
             document.getElementById('active-player-name').innerText = currentTeam === 'A' ? teamA[indexA].name : teamB[indexB].name;
         }
 
+        // --- GESTION DU TIME OUT (NOUVEAU) ---
+        function startTimeOut(team) {
+            if (team === 'A') timeoutUsedA = true;
+            if (team === 'B') timeoutUsedB = true;
+
+            // Cache le bouton pour cette équipe
+            document.getElementById('btn-timeout-' + team.toLowerCase()).style.display = 'none';
+
+            let teamNameStr = team === 'A' ? teamAName : teamBName;
+            document.getElementById('timeout-team-caller').innerText = "Demandé par : " + teamNameStr;
+            document.getElementById('timeout-modal').style.display = 'block';
+            
+            // 6 minutes 28 secondes = 388 secondes
+            let timeLeft = (6 * 60) + 28; 
+            updateTimerDisplay(timeLeft);
+
+            timeoutInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay(timeLeft);
+                if (timeLeft <= 0) {
+                    endTimeOut();
+                    alert("⏰ Dring ! Fin du Time Out ! Reprise des hostilités !");
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay(seconds) {
+            let m = Math.floor(seconds / 60);
+            let s = seconds % 60;
+            document.getElementById('timeout-timer').innerText = (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+        }
+
+        function endTimeOut() {
+            clearInterval(timeoutInterval);
+            document.getElementById('timeout-modal').style.display = 'none';
+        }
+
+
         // --- GESTION DES BIÈRES CARDIO ---
-        function promptBeer(team) {
-            currentBeerTeam = team;
-            let playersInTeam = team === 'A' ? teamA : teamB;
-            let html = playersInTeam.map(p => `<button onclick="confirmBeer('${p.id}')" style="margin:10px;">${p.name}</button>`).join('');
-            document.getElementById('beer-players-list').innerHTML = html;
-            document.getElementById('beer-modal').style.display = 'block';
-        }
-
-        function confirmBeer(playerId) {
-            document.getElementById('beer-modal').style.display = 'none';
-            matchBeersDetails.push(playerId);
-            if (currentBeerTeam === 'A') beersA++; else beersB++;
-            
-            document.getElementById('cardio-score-a').innerText = beersA + " 🍺";
-            document.getElementById('cardio-score-b').innerText = beersB + " 🍺";
-            
-            let totalDrank = beersA + beersB;
-            document.getElementById('cardio-progress').innerText = `${totalDrank} / ${targetBeers}`;
-            
-            if (totalDrank >= targetBeers) {
-                let winTeam = beersA > beersB ? 'A' : (beersB > beersA ? 'B' : 'Egalité');
-                if(winTeam !== 'Egalité') document.getElementById('winner-select').value = winTeam;
-                alert(`🔥 Objectif atteint ! ${winTeam !== 'Egalité' ? 'L\'équipe ' + winTeam + ' a soif de victoire !' : 'C\'est une égalité parfaite !'}`);
-                goToEndScreen();
-            }
-        }
-
-        function abandonMatch() {
-            if(confirm("Une équipe déclare forfait ? Cela mettra fin au match immédiatement !")) {
-                goToEndScreen();
-            }
-        }
+        function promptBeer(team) { currentBeerTeam = team; let playersInTeam = team === 'A' ? teamA : teamB; let html = playersInTeam.map(p => `<button onclick="confirmBeer('${p.id}')" style="margin:10px;">${p.name}</button>`).join(''); document.getElementById('beer-players-list').innerHTML = html; document.getElementById('beer-modal').style.display = 'block'; }
+        function confirmBeer(playerId) { document.getElementById('beer-modal').style.display = 'none'; matchBeersDetails.push(playerId); if (currentBeerTeam === 'A') beersA++; else beersB++; document.getElementById('cardio-score-a').innerText = beersA + " 🍺"; document.getElementById('cardio-score-b').innerText = beersB + " 🍺"; let totalDrank = beersA + beersB; document.getElementById('cardio-progress').innerText = `${totalDrank} / ${targetBeers}`; if (totalDrank >= targetBeers) { let winTeam = beersA > beersB ? 'A' : (beersB > beersA ? 'B' : 'Egalité'); if(winTeam !== 'Egalité') document.getElementById('winner-select').value = winTeam; alert(`🔥 Objectif atteint ! ${winTeam !== 'Egalité' ? 'L\'équipe ' + winTeam + ' a soif de victoire !' : 'C\'est une égalité parfaite !'}`); goToEndScreen(); } }
+        function abandonMatch() { if(confirm("Une équipe déclare forfait ? Cela mettra fin au match immédiatement !")) { goToEndScreen(); } }
 
         // --- GESTION DES TIRS ---
         function registerShot(result) { 
@@ -563,7 +611,6 @@
                         if(winner === 'B') { dbP.wins = (dbP.wins || 0) + 1; playerWon = true; } 
                     }
 
-                    // Statistiques Spécifiques au Mode
                     if (currentMode === 'chaos' && playerWon) dbP.chaosWins = (dbP.chaosWins || 0) + 1;
                     if (currentMode === 'cardio') {
                         if (playerWon) dbP.cardioWins = (dbP.cardioWins || 0) + 1;
