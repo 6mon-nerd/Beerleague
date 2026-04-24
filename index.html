@@ -117,8 +117,8 @@
             <strong>Tir Ennemi :</strong> Dégommer une canette adverse = 2 gorgées de pénalité + l'équivalent tombé.<br>
             <strong>Le Tir de Merde 💩 :</strong> Un tir honteux pénalise l'équipe du tireur (1 gorgée).
             <h3>Art. 4 : Les Modes de Jeu</h3>
-            <strong>🏃 Cardio :</strong> Objectif de bières. Vitesse pure. Précision et Elo conservés.<br>
-            <strong>🐷 Gros Porc :</strong> Comme Cardio, mais la précision n'est pas sauvegardée ! Lâchez-vous.<br>
+            <strong>🏃 Cardio :</strong> Objectif global de bières. Vitesse pure. Précision et Elo conservés.<br>
+            <strong>🐷 Gros Porc :</strong> X bières définies PAR JOUEUR. On joue normalement mais les tirs ne comptent pas dans les stats de précision.<br>
             <strong>⏸️ Time Out :</strong> En Compétitif, 1 pause de 6m28s par équipe par match.
         </div>
         <h2>⚖️ JURISPRUDENCE</h2>
@@ -167,14 +167,19 @@
                 <option value="competitif">🏆 Compétitif (Classique Elo)</option>
                 <option value="amical">🤝 Match Amical (Classique sans Elo)</option>
                 <option value="chaos">🎲 Mode Chaos (Règles Aléatoires)</option>
-                <option value="cardio">🏃 Mode Cardio (Vitesse & Bières)</option>
-                <option value="grosporc">🐷 Gros Porc (Bières & No Précision Stats)</option>
+                <option value="grosporc">🐷 Gros Porc (X Bières par joueur, No Précision Stats)</option>
+                <option value="cardio">🏃 Mode Cardio (Objectif équipe commun)</option>
             </select>
         </div>
 
         <div class="setup-section" id="setup-cardio-options" style="display:none;">
-            <h3 style="color: white; margin-top: 0;">Objectif Bières 🍺</h3>
-            <input type="number" id="setup-cardio-target" placeholder="Nombre total de bières (ex: 11)" style="width:90%">
+            <h3 style="color: white; margin-top: 0;">Objectif de l'Équipe 🏃</h3>
+            <input type="number" id="setup-cardio-target" placeholder="Nb total de bières (ex: 11)" style="width:90%">
+        </div>
+        
+        <div class="setup-section" id="setup-grosporc-options" style="display:none;">
+            <h3 style="color: white; margin-top: 0;">Objectif Individuel 🐷</h3>
+            <input type="number" id="setup-grosporc-target" placeholder="Nb de bières PAR JOUEUR (ex: 3)" style="width:90%">
         </div>
 
         <div class="setup-section">
@@ -206,7 +211,7 @@
         </div>
 
         <div id="cardio-panel" style="display: none; background-color:#1a1a1a; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align:center;">
-            <h2 style="color:var(--amber); margin-top:0;">Objectif : <span id="cardio-progress">0 / 11</span> Bières</h2>
+            <h2 style="color:var(--amber); margin-top:0;">Objectif Équipe: <span id="cardio-progress">0 / 11</span> Bières</h2>
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="width:45%; text-align:center;">
                     <h3 id="cardio-team-a-name" style="margin-bottom:5px; color:white;">Équipe A</h3>
@@ -224,7 +229,7 @@
         <h1 id="active-team-name" style="font-size: 40px; margin: 0; color: var(--amber);">Nom de l'équipe</h1>
         <p style="font-size: 24px; margin-top: 10px; margin-bottom: 5px;">Tireur : <strong id="active-player-name">...</strong></p>
         
-        <button class="btn-fini" onclick="markActivePlayerFinished()">🏁 Ce joueur a fini sa bière !</button>
+        <button class="btn-fini" onclick="markActivePlayerFinished()">🏁 Ce joueur a fini une bière !</button>
         
         <div style="margin-top: 30px;" class="flex-row">
             <button class="btn-miss giant-btn" onclick="registerShot('miss')">RATÉ</button>
@@ -240,7 +245,7 @@
         </div>
 
         <br><br>
-        <button style="margin-top: 20px; background-color: var(--surface); color: white;" onclick="goToEndScreen()">Fin du Match</button>
+        <button style="margin-top: 20px; background-color: var(--surface); color: white;" onclick="goToEndScreen()">Forcer la Fin du Match</button>
     </div>
 
     <div id="timeout-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; text-align:center;">
@@ -293,12 +298,15 @@
         let teamAName = "Équipe A", teamBName = "Équipe B";
         
         let beersA = 0, beersB = 0, targetBeers = 0, matchBeersDetails = [];
+        let beersPerPlayerTarget = 1, playerBeersFinished = {};
+        
         let timeoutUsedA = false, timeoutUsedB = false, timeoutInterval;
         let finishedPlayers = []; 
         let currentMatchPhoto = "";
 
         document.getElementById('setup-mode').addEventListener('change', function(e) {
-            document.getElementById('setup-cardio-options').style.display = (e.target.value === 'cardio' || e.target.value === 'grosporc') ? 'block' : 'none';
+            document.getElementById('setup-cardio-options').style.display = e.target.value === 'cardio' ? 'block' : 'none';
+            document.getElementById('setup-grosporc-options').style.display = e.target.value === 'grosporc' ? 'block' : 'none';
         });
 
         const funnyTeamNames = ["Le FC Pinte", "Real MaBière", "Atletico Demi", "Les Soiffards", "Bière Munich", "Paris Saint-Goulot", "Inter Pression", "Boca Jaunes", "AS Levure", "Sporting Tonneau", "Les Piliers de Bar"];
@@ -354,7 +362,7 @@
             }); 
         }
 
-        // --- HISTORIQUE (NOUVEAU) ---
+        // --- HISTORIQUE (AVEC SUPPRESSION) ---
         function renderHistory() {
             let listDiv = document.getElementById('history-list'); listDiv.innerHTML = '';
             if(matchHistoryDB.length === 0) { listDiv.innerHTML = "<p style='color:gray; padding:15px;'>Aucun match joué pour le moment.</p>"; return; }
@@ -364,7 +372,8 @@
                 let winnerName = m.winner === 'A' ? m.teamAName : m.teamBName;
                 let photoHtml = m.photoBase64 ? `<img src="${m.photoBase64}" style="width:100%; border-radius:8px; margin-top:10px;">` : '';
                 listDiv.innerHTML += `
-                <div class="list-card" style="display:block; text-align:center;">
+                <div class="list-card" style="display:block; text-align:center; position: relative; padding-right: 35px;">
+                    <button class="btn-delete" style="position: absolute; top: 10px; right: 10px; background: transparent; color: var(--miss-red); font-size: 18px; padding: 5px;" onclick="deleteMatch('${m.id}')">✖</button>
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:12px;">
                         <span style="color:var(--amber)">${dateStr}</span>
                         <span style="color:gray; text-transform:uppercase;">${m.mode}</span>
@@ -374,6 +383,12 @@
                     ${photoHtml}
                 </div>`;
             });
+        }
+        
+        function deleteMatch(id) {
+            if(confirm("Supprimer ce match de l'historique ? (Note: Les statistiques et l'Elo des joueurs ne seront pas annulés pour éviter de corrompre le classement continu).")) {
+                db.collection("history").doc(id.toString()).delete();
+            }
         }
 
         // --- HOF, PROFIL, ETC. ---
@@ -401,23 +416,27 @@
             players.forEach(p => { htmlA += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-a"> ${p.name}</label>`; htmlB += `<label class="checkbox-container"><input type="checkbox" value="${p.id}" class="check-team-b"> ${p.name}</label>`; });
             document.getElementById('setup-team-a').innerHTML = htmlA; document.getElementById('setup-team-b').innerHTML = htmlB;
             
-            // Option "Aucun Arbitre"
             document.getElementById('setup-referee').innerHTML = `<option value="">-- Aucun Arbitre --</option>` + referees.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
             
             let nameA = getRandomTeamName(); let nameB = getRandomTeamName(nameA);
             document.getElementById('setup-name-a').value = nameA; document.getElementById('setup-name-b').value = nameB;
+            
+            document.getElementById('setup-cardio-target').value = '';
+            document.getElementById('setup-grosporc-target').value = '';
+            
             showScreen('setup-match');
         }
 
         function startMatch() {
-            teamA = []; teamB = []; shotHistoryStack = []; finishedPlayers = [];
+            teamA = []; teamB = []; shotHistoryStack = []; finishedPlayers = []; playerBeersFinished = {};
             document.querySelectorAll('.check-team-a:checked').forEach(cb => teamA.push(players.find(p => p.id == cb.value)));
             document.querySelectorAll('.check-team-b:checked').forEach(cb => teamB.push(players.find(p => p.id == cb.value)));
             if(teamA.length === 0 || teamB.length === 0) return alert("1 joueur minimum par équipe !");
             
             currentMode = document.getElementById('setup-mode').value;
+            beersPerPlayerTarget = 1; // Par défaut
             
-            if(currentMode === 'cardio' || currentMode === 'grosporc') {
+            if(currentMode === 'cardio') {
                 let target = parseInt(document.getElementById('setup-cardio-target').value);
                 if(!target || target <= 0) return alert("Il faut définir un nombre de bières cible !");
                 targetBeers = target; beersA = 0; beersB = 0; matchBeersDetails = [];
@@ -425,7 +444,14 @@
                 document.getElementById('cardio-score-a').innerText = "0 🍺";
                 document.getElementById('cardio-score-b').innerText = "0 🍺";
                 document.getElementById('cardio-panel').style.display = 'block';
-            } else { document.getElementById('cardio-panel').style.display = 'none'; }
+            } else if (currentMode === 'grosporc') {
+                let target = parseInt(document.getElementById('setup-grosporc-target').value);
+                if(!target || target <= 0) return alert("Définissez le nombre de bières par joueur !");
+                beersPerPlayerTarget = target; matchBeersDetails = [];
+                document.getElementById('cardio-panel').style.display = 'none';
+            } else { 
+                document.getElementById('cardio-panel').style.display = 'none'; 
+            }
 
             timeoutUsedA = false; timeoutUsedB = false;
             if(currentMode === 'competitif') { document.getElementById('timeout-panel').style.display = 'flex'; document.getElementById('btn-timeout-a').style.display = 'block'; document.getElementById('btn-timeout-b').style.display = 'block'; document.getElementById('btn-timeout-a').innerText = `⏸️ Time Out ${document.getElementById('setup-name-a').value || "A"}`; document.getElementById('btn-timeout-b').innerText = `⏸️ Time Out ${document.getElementById('setup-name-b').value || "B"}`; } 
@@ -439,12 +465,12 @@
             document.getElementById('live-referee').innerText = refObj ? refObj.name : "Auto-Arbitrage";
             
             let modeText = 'Compétitif 🏆';
-            if(currentMode === 'chaos') modeText = 'Mode Chaos 🎲'; else if(currentMode === 'cardio') modeText = 'Mode Cardio 🏃'; else if(currentMode === 'amical') modeText = 'Match Amical 🤝'; else if(currentMode === 'grosporc') modeText = 'Mode Gros Porc 🐷';
+            if(currentMode === 'chaos') modeText = 'Mode Chaos 🎲'; else if(currentMode === 'cardio') modeText = 'Mode Cardio 🏃'; else if(currentMode === 'amical') modeText = 'Match Amical 🤝'; else if(currentMode === 'grosporc') modeText = `Mode Gros Porc 🐷 (${beersPerPlayerTarget} 🍺/joueur)`;
 
             document.getElementById('live-mode-text').innerText = modeText;
             document.getElementById('chaos-panel').style.display = currentMode === 'chaos' ? 'block' : 'none';
             document.getElementById('chaos-rule-text').innerText = ""; 
-            currentMatchPhoto = ""; // Reset de la photo
+            currentMatchPhoto = ""; 
 
             updateLiveUI(); showScreen('live-match');
         }
@@ -468,25 +494,57 @@
             if (teamArray.every(p => finishedPlayers.includes(p.id))) {
                 currentTeam = currentTeam === 'A' ? 'B' : 'A';
                 teamArray = currentTeam === 'A' ? teamA : teamB;
-                if (teamArray.every(p => finishedPlayers.includes(p.id))) return; // Tout le monde a fini
+                if (teamArray.every(p => finishedPlayers.includes(p.id))) return; 
             }
             if(currentTeam === 'A') indexA = getNextValidIndex(teamA, indexA); else indexB = getNextValidIndex(teamB, indexB);
         }
 
         function markActivePlayerFinished() {
             let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
-            if(confirm(`🍺 ${activePlayer.name} a fini sa bière et quitte la rotation des tirs ?`)) {
-                finishedPlayers.push(activePlayer.id);
-                // Si on est en Cardio/Gros Porc, ça ajoute aussi une bière au score d'équipe
-                if(currentMode === 'cardio' || currentMode === 'grosporc') {
+            
+            if(confirm(`🍺 Confirmer que ${activePlayer.name} a fini une bière ?`)) {
+                playerBeersFinished[activePlayer.id] = (playerBeersFinished[activePlayer.id] || 0) + 1;
+                
+                // Stats volume
+                if (currentMode === 'cardio' || currentMode === 'grosporc') {
                     matchBeersDetails.push(activePlayer.id);
+                }
+
+                if (currentMode === 'grosporc') {
+                    let remaining = beersPerPlayerTarget - playerBeersFinished[activePlayer.id];
+                    if (remaining <= 0) {
+                        finishedPlayers.push(activePlayer.id);
+                        alert(`🐷 OINK ! ${activePlayer.name} a englouti toutes ses bières et quitte la rotation !`);
+                    } else {
+                        alert(`🍺 Cul sec ! Plus que ${remaining} bière(s) à finir pour ${activePlayer.name}.`);
+                    }
+                } else if (currentMode === 'cardio') {
+                    // En Cardio, ça met juste à jour le score global de l'équipe
                     if(currentTeam === 'A') beersA++; else beersB++;
                     updateCardioUI();
+                } else {
+                    // Modes normaux (1 bière = fini)
+                    finishedPlayers.push(activePlayer.id);
+                    alert(`🏁 ${activePlayer.name} a fini sa bière et quitte la rotation !`);
                 }
+
+                // Check Victoire (Sauf Cardio qui se check lui-même)
+                if (currentMode !== 'cardio') {
+                    if(teamA.every(p => finishedPlayers.includes(p.id))) {
+                        alert(`🏆 L'équipe ${teamAName} a fini toutes ses bières !`);
+                        document.getElementById('winner-select').value = 'A';
+                        goToEndScreen();
+                        return;
+                    }
+                    if(teamB.every(p => finishedPlayers.includes(p.id))) {
+                        alert(`🏆 L'équipe ${teamBName} a fini toutes ses bières !`);
+                        document.getElementById('winner-select').value = 'B';
+                        goToEndScreen();
+                        return;
+                    }
+                }
+
                 advanceTurn(); updateLiveUI();
-                
-                if(teamA.every(p => finishedPlayers.includes(p.id))) alert(`🏆 ${teamAName} a fini toutes ses bières !`);
-                if(teamB.every(p => finishedPlayers.includes(p.id))) alert(`🏆 ${teamBName} a fini toutes ses bières !`);
             }
         }
 
@@ -498,7 +556,7 @@
             if (totalDrank >= targetBeers) {
                 let winTeam = beersA > beersB ? 'A' : (beersB > beersA ? 'B' : 'Egalité');
                 if(winTeam !== 'Egalité') document.getElementById('winner-select').value = winTeam;
-                alert(`🔥 Objectif atteint ! ${winTeam !== 'Egalité' ? 'L\'équipe ' + winTeam + ' a soif de victoire !' : 'C\'est une égalité !'}`);
+                alert(`🔥 Objectif atteint ! ${winTeam !== 'Egalité' ? 'L\'équipe ' + winTeam + ' a soif de victoire !' : 'C\'est une égalité parfaite !'}`);
                 goToEndScreen();
             }
         }
@@ -519,7 +577,7 @@
 
         // --- TIRS ---
         function registerShot(result) { 
-            shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, finishedPlayers: JSON.parse(JSON.stringify(finishedPlayers)), playersClone: JSON.parse(JSON.stringify(players)) });
+            shotHistoryStack.push({ teamA: JSON.parse(JSON.stringify(teamA)), teamB: JSON.parse(JSON.stringify(teamB)), indexA, indexB, currentTeam, finishedPlayers: JSON.parse(JSON.stringify(finishedPlayers)), playerBeersFinished: JSON.parse(JSON.stringify(playerBeersFinished)), playersClone: JSON.parse(JSON.stringify(players)) });
             let isHit = (result === 'hit'); let isMerde = (result === 'merde');
             document.body.classList.remove('anim-hit', 'anim-miss', 'anim-merde'); void document.body.offsetWidth; 
             if(isHit) document.body.classList.add('anim-hit'); else if(isMerde) document.body.classList.add('anim-merde'); else document.body.classList.add('anim-miss');
@@ -528,7 +586,6 @@
             let playerInDb = players.find(p => p.id == activePlayer.id);
             
             if(playerInDb) { 
-                // En mode "Gros Porc", la précision n'est pas comptée !
                 if (currentMode !== 'grosporc') {
                     playerInDb.totalShots += 1; 
                     if (isHit) playerInDb.hits += 1; 
@@ -544,7 +601,7 @@
             let refObj = referees.find(r => r.id == currentRefId);
             if(refObj) { refObj.errorsCount = (refObj.errorsCount || 0) + 1; db.collection("referees").doc(refObj.id).set(refObj); }
             let lastState = shotHistoryStack.pop();
-            teamA = lastState.teamA; teamB = lastState.teamB; indexA = lastState.indexA; indexB = lastState.indexB; currentTeam = lastState.currentTeam; finishedPlayers = lastState.finishedPlayers;
+            teamA = lastState.teamA; teamB = lastState.teamB; indexA = lastState.indexA; indexB = lastState.indexB; currentTeam = lastState.currentTeam; finishedPlayers = lastState.finishedPlayers; playerBeersFinished = lastState.playerBeersFinished;
             lastState.playersClone.forEach(oldP => { let currentP = players.find(p => p.id == oldP.id); if(JSON.stringify(oldP) !== JSON.stringify(currentP)) db.collection("players").doc(oldP.id).set(oldP); });
             updateLiveUI();
         }
@@ -560,7 +617,7 @@
                     let maxWidth = 800; let scaleSize = maxWidth / img.width;
                     canvas.width = maxWidth; canvas.height = img.height * scaleSize;
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    currentMatchPhoto = canvas.toDataURL('image/jpeg', 0.6); // Compression propre !
+                    currentMatchPhoto = canvas.toDataURL('image/jpeg', 0.6); 
                     document.getElementById('photo-preview').src = currentMatchPhoto;
                     document.getElementById('photo-preview').style.display = 'block';
                 }
@@ -574,7 +631,6 @@
             let opts = `<option value="">-- Aucun --</option>` + [...teamA, ...teamB].map(p => `<option value="${p.id}">${p.name}</option>`).join('');
             document.getElementById('mvp-select').innerHTML = opts; document.getElementById('lvp-select').innerHTML = opts;
             
-            // On préselectionne "Aucun" si ce n'est pas compétitif
             if(currentMode !== 'competitif') { document.getElementById('mvp-select').value = ""; document.getElementById('lvp-select').value = ""; }
             
             document.getElementById('photo-preview').style.display = 'none'; document.getElementById('photo-upload').value = "";
