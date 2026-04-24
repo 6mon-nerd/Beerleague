@@ -24,7 +24,7 @@
         button.btn-undo { background-color: transparent; color: gray; border: 1px solid gray; padding: 10px; font-size: 14px; margin-top: 20px;}
         button.btn-delete { background-color: var(--miss-red); color: white; padding: 10px; width: auto; font-size: 14px; margin: 0; border-radius: 6px; }
         button.btn-timeout { background-color: #2196F3; color: white; font-size: 14px; padding: 10px; width: 45%; margin: 5px; }
-        button.btn-fini { background-color: #FF9800; color: white; border: none; padding: 10px; font-size: 14px; margin-top: 10px; width: 90%; max-width: 300px; }
+        button.btn-fini { background-color: #FF9800; color: white; border: none; padding: 15px; font-size: 18px; margin-top: 10px; width: 90%; max-width: 400px; box-shadow: 0 4px 6px rgba(255, 152, 0, 0.3);}
         input[type="text"], input[type="number"], select { background-color: var(--surface); color: white; border: 1px solid gray; padding: 15px; border-radius: 8px; font-size: 16px; width: 80%; max-width: 350px; margin-bottom: 10px; }
         .team-name-input { background-color: transparent !important; border: none !important; color: white !important; font-size: 20px !important; font-weight: bold; text-align: left; padding: 0 !important; margin-bottom: 10px; border-bottom: 2px dashed gray !important; border-radius: 0 !important; width: 100% !important;}
         
@@ -227,9 +227,7 @@
 
         <h3 style="color: white;">AU TOUR DE :</h3>
         <h1 id="active-team-name" style="font-size: 40px; margin: 0; color: var(--amber);">Nom de l'équipe</h1>
-        <p style="font-size: 24px; margin-top: 10px; margin-bottom: 5px;">Tireur : <strong id="active-player-name">...</strong></p>
-        
-        <button class="btn-fini" onclick="markActivePlayerFinished()">🏁 Ce joueur a fini une bière !</button>
+        <p style="font-size: 24px; margin-top: 10px; margin-bottom: 20px;">Tireur : <strong id="active-player-name">...</strong></p>
         
         <div style="margin-top: 30px;" class="flex-row">
             <button class="btn-miss giant-btn" onclick="registerShot('miss')">RATÉ</button>
@@ -239,6 +237,10 @@
         
         <button class="btn-undo" onclick="undoShot()">↩ Oups ! Annuler le dernier tir</button>
         
+        <div style="margin-top: 30px;">
+            <button class="btn-fini" onclick="promptAllBeers()">🍻 Quelqu'un a fini sa bière !</button>
+        </div>
+
         <div id="timeout-panel" class="flex-row" style="margin-top: 20px; display: none;">
             <button id="btn-timeout-a" class="btn-timeout" onclick="startTimeOut('A')">⏸️ Time Out A</button>
             <button id="btn-timeout-b" class="btn-timeout" onclick="startTimeOut('B')">⏸️ Time Out B</button>
@@ -248,7 +250,15 @@
         <button style="margin-top: 20px; background-color: var(--surface); color: white;" onclick="goToEndScreen()">Forcer la Fin du Match</button>
     </div>
 
-    <div id="timeout-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; text-align:center;">
+    <div id="beer-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; text-align:center;">
+        <div style="margin-top:15vh; padding:20px;">
+            <h2 style="color:white; margin-bottom:20px;">Qui vient de finir sa bière ? 🍻</h2>
+            <div id="beer-players-list" style="margin-bottom:20px; max-height:50vh; overflow-y:auto; padding-bottom: 20px;"></div>
+            <button class="btn-secondary" onclick="document.getElementById('beer-modal').style.display='none'">Annuler</button>
+        </div>
+    </div>
+
+    <div id="timeout-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:3000; text-align:center;">
         <div style="margin-top:30vh; padding:20px;">
             <h1 style="color:var(--amber); font-size:50px; margin-bottom: 0;">TIME OUT ⏸️</h1>
             <h3 id="timeout-team-caller" style="color:gray; font-weight: normal;">Demandé par ...</h3>
@@ -362,7 +372,7 @@
             }); 
         }
 
-        // --- HISTORIQUE (AVEC SUPPRESSION) ---
+        // --- HISTORIQUE ---
         function renderHistory() {
             let listDiv = document.getElementById('history-list'); listDiv.innerHTML = '';
             if(matchHistoryDB.length === 0) { listDiv.innerHTML = "<p style='color:gray; padding:15px;'>Aucun match joué pour le moment.</p>"; return; }
@@ -386,9 +396,7 @@
         }
         
         function deleteMatch(id) {
-            if(confirm("Supprimer ce match de l'historique ? (Note: Les statistiques et l'Elo des joueurs ne seront pas annulés pour éviter de corrompre le classement continu).")) {
-                db.collection("history").doc(id.toString()).delete();
-            }
+            if(confirm("Supprimer ce match de l'historique ?")) { db.collection("history").doc(id.toString()).delete(); }
         }
 
         // --- HOF, PROFIL, ETC. ---
@@ -499,36 +507,54 @@
             if(currentTeam === 'A') indexA = getNextValidIndex(teamA, indexA); else indexB = getNextValidIndex(teamB, indexB);
         }
 
-        function markActivePlayerFinished() {
-            let activePlayer = currentTeam === 'A' ? teamA[indexA] : teamB[indexB];
+        // NOUVEAU SYSTÈME DE BIÈRE GLOBAL
+        function promptAllBeers() {
+            // Affiche tous les joueurs qui n'ont pas encore fini leur quota de bières
+            let htmlA = teamA.filter(p => !finishedPlayers.includes(p.id)).map(p => `<button class="btn-secondary" style="margin:5px; width:45%;" onclick="confirmPlayerFinished('${p.id}')">${p.name}</button>`).join('');
+            let htmlB = teamB.filter(p => !finishedPlayers.includes(p.id)).map(p => `<button class="btn-secondary" style="margin:5px; width:45%; border-color:var(--miss-red); color:var(--text-light);" onclick="confirmPlayerFinished('${p.id}')">${p.name}</button>`).join('');
             
-            if(confirm(`🍺 Confirmer que ${activePlayer.name} a fini une bière ?`)) {
-                playerBeersFinished[activePlayer.id] = (playerBeersFinished[activePlayer.id] || 0) + 1;
+            document.getElementById('beer-players-list').innerHTML = `
+                <h3 style="color:var(--amber); margin-bottom:5px;">${teamAName}</h3>
+                <div class="flex-row">${htmlA || '<span style="color:gray;">Tous finis</span>'}</div>
+                <hr style="border: 1px dashed gray; margin: 15px 0;">
+                <h3 style="color:var(--miss-red); margin-bottom:5px;">${teamBName}</h3>
+                <div class="flex-row">${htmlB || '<span style="color:gray;">Tous finis</span>'}</div>
+            `;
+            document.getElementById('beer-modal').style.display = 'block';
+        }
+
+        function confirmPlayerFinished(playerId) {
+            document.getElementById('beer-modal').style.display = 'none';
+            let player = players.find(p => p.id == playerId);
+            let inTeamA = teamA.some(p => p.id == playerId);
+
+            if(confirm(`🍺 Confirmer que ${player.name} vient de finir une bière ?`)) {
+                playerBeersFinished[playerId] = (playerBeersFinished[playerId] || 0) + 1;
                 
                 // Stats volume
                 if (currentMode === 'cardio' || currentMode === 'grosporc') {
-                    matchBeersDetails.push(activePlayer.id);
+                    matchBeersDetails.push(playerId);
                 }
 
                 if (currentMode === 'grosporc') {
-                    let remaining = beersPerPlayerTarget - playerBeersFinished[activePlayer.id];
+                    let remaining = beersPerPlayerTarget - playerBeersFinished[playerId];
                     if (remaining <= 0) {
-                        finishedPlayers.push(activePlayer.id);
-                        alert(`🐷 OINK ! ${activePlayer.name} a englouti toutes ses bières et quitte la rotation !`);
+                        finishedPlayers.push(playerId);
+                        alert(`🐷 OINK ! ${player.name} a englouti toutes ses bières et quitte la rotation !`);
                     } else {
-                        alert(`🍺 Cul sec ! Plus que ${remaining} bière(s) à finir pour ${activePlayer.name}.`);
+                        alert(`🍺 Santé ! Plus que ${remaining} bière(s) à finir pour ${player.name}.`);
                     }
                 } else if (currentMode === 'cardio') {
                     // En Cardio, ça met juste à jour le score global de l'équipe
-                    if(currentTeam === 'A') beersA++; else beersB++;
+                    if(inTeamA) beersA++; else beersB++;
                     updateCardioUI();
                 } else {
                     // Modes normaux (1 bière = fini)
-                    finishedPlayers.push(activePlayer.id);
-                    alert(`🏁 ${activePlayer.name} a fini sa bière et quitte la rotation !`);
+                    finishedPlayers.push(playerId);
+                    alert(`🏁 ${player.name} a fini sa bière et quitte la rotation !`);
                 }
 
-                // Check Victoire (Sauf Cardio qui se check lui-même)
+                // Check Victoire pour les modes hors Cardio
                 if (currentMode !== 'cardio') {
                     if(teamA.every(p => finishedPlayers.includes(p.id))) {
                         alert(`🏆 L'équipe ${teamAName} a fini toutes ses bières !`);
@@ -544,7 +570,14 @@
                     }
                 }
 
-                advanceTurn(); updateLiveUI();
+                // Si le joueur actif vient de s'éliminer, on avance l'index pour ne pas le bloquer
+                let activePlayerId = currentTeam === 'A' ? teamA[indexA].id : teamB[indexB].id;
+                if (activePlayerId === playerId && finishedPlayers.includes(playerId)) {
+                    if (currentTeam === 'A') indexA = getNextValidIndex(teamA, indexA);
+                    else indexB = getNextValidIndex(teamB, indexB);
+                }
+
+                updateLiveUI();
             }
         }
 
